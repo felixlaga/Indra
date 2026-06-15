@@ -9,7 +9,9 @@ export default defineSchema({
     status: v.union(
       v.literal("pending"),
       v.literal("running"),
+      v.literal("paused"),
       v.literal("completed"),
+      v.literal("cancelled"),
       v.literal("failed")
     ),
     createdAt: v.number(),
@@ -33,14 +35,22 @@ export default defineSchema({
     sessionId: v.id("sessions"),
     branchId: v.string(),
     query: v.string(),
-    mode: v.union(v.literal("search_summarize"), v.literal("hypothesis")),
+    mode: v.union(
+      v.literal("search_summarize"),
+      v.literal("hypothesis"),
+      v.literal("synthesis"),
+      v.literal("gap_analysis")
+    ),
     status: v.union(
       v.literal("pending"),
       v.literal("running"),
       v.literal("completed"),
       v.literal("paused"),
-      v.literal("pruned")
+      v.literal("pruned"),
+      v.literal("failed")
     ),
+    pruneReason: v.optional(v.string()),
+    failureReason: v.optional(v.string()),
     parentBranchId: v.optional(v.string()),
     contextWindowUsed: v.number(),
     maxContextWindow: v.number(),
@@ -84,6 +94,15 @@ export default defineSchema({
     paperTitle: v.string(),
     summary: v.string(),
     groundedness: v.number(),
+    validationStatus: v.optional(
+      v.union(
+        v.literal("not_validated"),
+        v.literal("validated"),
+        v.literal("partially_validated"),
+        v.literal("failed_validation")
+      )
+    ),
+    generationProvenance: v.optional(v.any()),
     iterationNumber: v.number(),
     createdAt: v.number(),
   })

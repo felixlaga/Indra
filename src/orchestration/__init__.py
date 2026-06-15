@@ -12,6 +12,7 @@ from .overseer import Overseer
 from .models import (
     BranchStatus,
     InnerLoopMode,
+    SummaryGenerationResult,
     ValidatedSummary,
     ResearchHypothesis,
     IterationResult,
@@ -57,6 +58,7 @@ __all__ = [
     # Models
     "BranchStatus",
     "InnerLoopMode",
+    "SummaryGenerationResult",
     "ValidatedSummary",
     "ResearchHypothesis",
     "IterationResult",

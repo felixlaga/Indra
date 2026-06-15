@@ -11,6 +11,11 @@ from ..settings import (
     OPENROUTER_BASE_URL,
     OPENROUTER_DEFAULT_MODEL,
 )
+from ..domain.provenance import (
+    GenerationProvenance,
+    LLMCompletion,
+    TokenUsage,
+)
 from .protocols import LLMProvider, Message, MessageRole
 
 logger = logging.getLogger(__name__)
@@ -86,6 +91,24 @@ class OpenRouterAdapter(LLMProvider):
         max_tokens: int | None = None,
     ) -> str:
         """Generate a completion for a simple prompt."""
+        completion = await self.complete_structured(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return completion.text
+
+    async def complete_structured(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        prompt_name: str = "ad_hoc_completion",
+        prompt_version: str = "v1",
+    ) -> LLMCompletion:
+        """Generate a completion with provider/model/prompt provenance."""
         messages: list[dict] = []
 
         if system_prompt:
@@ -107,7 +130,29 @@ class OpenRouterAdapter(LLMProvider):
         logger.info(f"Completion received ({len(result)} chars)")
         logger.debug(f"Usage: {response.usage}")
 
-        return result
+        usage = response.usage
+        token_usage = None
+        if usage is not None:
+            token_usage = TokenUsage(
+                prompt_tokens=getattr(usage, "prompt_tokens", None),
+                completion_tokens=getattr(usage, "completion_tokens", None),
+                total_tokens=getattr(usage, "total_tokens", None),
+            )
+
+        return LLMCompletion(
+            text=result,
+            provenance=GenerationProvenance(
+                provider="openrouter",
+                model=self.model,
+                prompt_name=prompt_name,
+                prompt_version=prompt_version,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                token_usage=token_usage,
+                provider_request_id=getattr(response, "id", None),
+                generation_parameters={},
+            ),
+        )
 
     async def complete_messages(
         self,

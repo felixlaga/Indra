@@ -29,6 +29,7 @@ from .models import (
     ResearchSession,
     RuntimeLoopBinding,
     SessionCreate,
+    SessionPaperView,
     SessionSnapshot,
     SessionStatus,
 )
@@ -284,8 +285,8 @@ def update_branch(
         raise
 
 
-@router.get("/sessions/{session_id}/papers", response_model=list[Paper])
-def list_session_papers(session_id: str, request: Request) -> list[Paper]:
+@router.get("/sessions/{session_id}/papers", response_model=list[SessionPaperView])
+def list_session_papers(session_id: str, request: Request) -> list[SessionPaperView]:
     """List papers for a session."""
 
     try:

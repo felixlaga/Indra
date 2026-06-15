@@ -668,3 +668,33 @@ Events are for replay and live updates. Tables are the source of truth.
 - Do not overwrite summaries without versioning.
 - Do not store secret keys.
 - Do not treat citation count as quality by itself.
+
+## 8. Phase 1 canonical contract alignment
+
+Phase 1 establishes `src/domain` as the canonical product contract for durable
+entities, statuses, evidence provenance, generated-artifact provenance, and
+lifecycle transitions.
+
+The initial SQL migration in `migrations/0001_initial_product_schema.sql` is the
+proposed Phase 2 storage contract. It now represents:
+
+- UUID identifiers for durable ERLA entities.
+- Global `papers` separated from contextual `session_papers`.
+- Canonical session and branch statuses, including branch `failed`.
+- Summary validation states: `not_validated`, `validated`,
+  `partially_validated`, and `failed_validation`.
+- Evidence `source_type` plus source-specific locator constraints.
+- Automatic validation records separated from `manual_claim_reviews`.
+- Prompt/model generation provenance for summaries, validations, hypotheses,
+  and agent decisions.
+- Branch `prune_reason` and `failure_reason`.
+
+Real Postgres migration execution, connection management, row mappers, and the
+Postgres-backed repository remain Phase 2.
+
+## 9. Convex projection note
+
+The `convex/` schema is not the canonical durable data model. It remains a
+prototype realtime projection for visualization and chat. It intentionally drops
+or flattens several production fields, including complete evidence locators,
+validation records, manual review records, and full generation provenance.

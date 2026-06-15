@@ -45,6 +45,7 @@ CREATE TABLE research_sessions (
   source_providers text[] NOT NULL DEFAULT '{}'::text[],
   filters jsonb NOT NULL DEFAULT '{}'::jsonb,
   parameters jsonb NOT NULL DEFAULT '{}'::jsonb,
+  failure_reason text,
   started_at timestamptz,
   completed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -64,6 +65,8 @@ CREATE TABLE branches (
   status text NOT NULL CHECK (
     status IN ('pending', 'running', 'paused', 'completed', 'pruned', 'failed')
   ),
+  prune_reason text,
+  failure_reason text,
   depth integer NOT NULL DEFAULT 0 CHECK (depth >= 0),
   context_tokens_used integer NOT NULL DEFAULT 0 CHECK (context_tokens_used >= 0),
   max_context_tokens integer CHECK (max_context_tokens IS NULL OR max_context_tokens > 0),
@@ -203,8 +206,17 @@ CREATE TABLE summaries (
       'failed_validation'
     )
   ),
+  provider text,
   model text,
+  prompt_name text,
   prompt_version text,
+  temperature double precision CHECK (temperature IS NULL OR (temperature >= 0 AND temperature <= 2)),
+  max_tokens integer CHECK (max_tokens IS NULL OR max_tokens > 0),
+  token_usage jsonb NOT NULL DEFAULT '{}'::jsonb,
+  cost jsonb NOT NULL DEFAULT '{}'::jsonb,
+  provider_request_id text,
+  generation_parameters jsonb NOT NULL DEFAULT '{}'::jsonb,
+  generated_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -251,18 +263,43 @@ CREATE TABLE claims (
 CREATE TABLE claim_evidence (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   claim_id uuid NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
-  paper_id uuid NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  source_type text NOT NULL CHECK (
+    source_type IN (
+      'paper_chunk',
+      'paper_abstract',
+      'paper_metadata',
+      'user_upload',
+      'manual',
+      'external_source'
+    )
+  ),
+  paper_id uuid REFERENCES papers(id) ON DELETE CASCADE,
   chunk_id uuid REFERENCES paper_chunks(id) ON DELETE SET NULL,
+  locator jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata_field text,
+  upload_id text,
+  document_id text,
+  external_uri text,
+  source_id text,
+  reviewer_id text,
   evidence_text text NOT NULL,
   relation text NOT NULL CHECK (
     relation IN ('supports', 'weakly_supports', 'contradicts', 'mentions', 'insufficient')
   ),
   score double precision CHECK (score IS NULL OR (score >= 0 AND score <= 1)),
-  page_start integer CHECK (page_start IS NULL OR page_start >= 0),
-  page_end integer CHECK (page_end IS NULL OR page_end >= 0),
+  page_start integer CHECK (page_start IS NULL OR page_start >= 1),
+  page_end integer CHECK (page_end IS NULL OR page_end >= 1),
   section_title text,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CHECK (page_end IS NULL OR page_start IS NULL OR page_end >= page_start)
+  CHECK (page_end IS NULL OR page_start IS NULL OR page_end >= page_start),
+  CHECK (
+    (source_type <> 'paper_chunk' OR (paper_id IS NOT NULL AND chunk_id IS NOT NULL))
+    AND (source_type <> 'paper_abstract' OR paper_id IS NOT NULL)
+    AND (source_type <> 'paper_metadata' OR (paper_id IS NOT NULL AND metadata_field IS NOT NULL))
+    AND (source_type <> 'user_upload' OR (upload_id IS NOT NULL OR document_id IS NOT NULL))
+    AND (source_type <> 'external_source' OR (external_uri IS NOT NULL OR source_id IS NOT NULL))
+    AND (source_type <> 'manual' OR reviewer_id IS NOT NULL)
+  )
 );
 
 CREATE TABLE validations (
@@ -279,7 +316,29 @@ CREATE TABLE validations (
   ),
   score double precision CHECK (score IS NULL OR score >= 0),
   raw_result jsonb NOT NULL DEFAULT '{}'::jsonb,
+  provider text,
   model text,
+  prompt_name text,
+  prompt_version text,
+  temperature double precision CHECK (temperature IS NULL OR (temperature >= 0 AND temperature <= 2)),
+  max_tokens integer CHECK (max_tokens IS NULL OR max_tokens > 0),
+  token_usage jsonb NOT NULL DEFAULT '{}'::jsonb,
+  cost jsonb NOT NULL DEFAULT '{}'::jsonb,
+  provider_request_id text,
+  generation_parameters jsonb NOT NULL DEFAULT '{}'::jsonb,
+  generated_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE manual_claim_reviews (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  claim_id uuid NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+  reviewer_id text NOT NULL,
+  manual_status text NOT NULL CHECK (
+    manual_status IN ('passed', 'failed', 'partial', 'error', 'not_applicable')
+  ),
+  automatic_validation_id uuid REFERENCES validations(id) ON DELETE SET NULL,
+  notes text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -304,6 +363,17 @@ CREATE TABLE hypotheses (
   status text CHECK (
     status IS NULL OR status IN ('draft', 'supported', 'weak', 'rejected', 'selected', 'archived')
   ),
+  provider text,
+  model text,
+  prompt_name text,
+  prompt_version text,
+  temperature double precision CHECK (temperature IS NULL OR (temperature >= 0 AND temperature <= 2)),
+  max_tokens integer CHECK (max_tokens IS NULL OR max_tokens > 0),
+  token_usage jsonb NOT NULL DEFAULT '{}'::jsonb,
+  cost jsonb NOT NULL DEFAULT '{}'::jsonb,
+  provider_request_id text,
+  generation_parameters jsonb NOT NULL DEFAULT '{}'::jsonb,
+  generated_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -344,10 +414,15 @@ CREATE TABLE agent_decisions (
   confidence double precision CHECK (
     confidence IS NULL OR (confidence >= 0 AND confidence <= 1)
   ),
+  provider text,
   model text,
+  prompt_name text,
   prompt_version text,
   token_usage jsonb NOT NULL DEFAULT '{}'::jsonb,
   cost jsonb NOT NULL DEFAULT '{}'::jsonb,
+  provider_request_id text,
+  generation_parameters jsonb NOT NULL DEFAULT '{}'::jsonb,
+  generated_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -405,6 +480,8 @@ CREATE INDEX idx_claims_branch_id ON claims(branch_id);
 CREATE INDEX idx_claims_paper_id ON claims(paper_id);
 CREATE INDEX idx_claims_status ON claims(status);
 CREATE INDEX idx_claim_evidence_claim_id ON claim_evidence(claim_id);
+CREATE INDEX idx_claim_evidence_source_type ON claim_evidence(source_type);
+CREATE INDEX idx_manual_claim_reviews_claim_id ON manual_claim_reviews(claim_id);
 CREATE INDEX idx_hypotheses_session_id ON hypotheses(session_id);
 CREATE INDEX idx_agent_decisions_session_id ON agent_decisions(session_id);
 CREATE INDEX idx_events_session_created_at ON events(session_id, created_at);

@@ -26,6 +26,7 @@ def test_initial_migration_defines_required_tables():
         "claims",
         "claim_evidence",
         "validations",
+        "manual_claim_reviews",
         "hypotheses",
         "hypothesis_support",
         "agent_decisions",
@@ -58,6 +59,8 @@ def test_initial_migration_defines_required_indexes():
         "idx_claims_paper_id",
         "idx_claims_status",
         "idx_claim_evidence_claim_id",
+        "idx_claim_evidence_source_type",
+        "idx_manual_claim_reviews_claim_id",
         "idx_hypotheses_session_id",
         "idx_agent_decisions_session_id",
         "idx_events_session_created_at",
@@ -86,6 +89,44 @@ def test_initial_migration_preserves_core_status_values():
 
     for severity in ("debug", "info", "warning", "error", "critical"):
         assert f"'{severity}'" in MIGRATION_SQL
+
+
+def test_initial_migration_aligns_phase1_contract_columns():
+    required_fragments = [
+        "failure_reason text",
+        "prune_reason text",
+        "source_type text NOT NULL CHECK",
+        "locator jsonb NOT NULL DEFAULT '{}'::jsonb",
+        "metadata_field text",
+        "upload_id text",
+        "external_uri text",
+        "reviewer_id text",
+        "provider text",
+        "prompt_name text",
+        "prompt_version text",
+        "provider_request_id text",
+        "generation_parameters jsonb NOT NULL DEFAULT '{}'::jsonb",
+        "generated_at timestamptz",
+        "CREATE TABLE manual_claim_reviews",
+    ]
+
+    for fragment in required_fragments:
+        assert fragment in MIGRATION_SQL
+
+
+def test_initial_migration_evidence_source_constraints_are_explicit():
+    for source_type in (
+        "paper_chunk",
+        "paper_abstract",
+        "paper_metadata",
+        "user_upload",
+        "manual",
+        "external_source",
+    ):
+        assert f"'{source_type}'" in MIGRATION_SQL
+
+    assert "source_type <> 'paper_chunk' OR (paper_id IS NOT NULL AND chunk_id IS NOT NULL)" in MIGRATION_SQL
+    assert "source_type <> 'manual' OR reviewer_id IS NOT NULL" in MIGRATION_SQL
 
 
 def test_initial_migration_has_uuid_and_vector_foundations():

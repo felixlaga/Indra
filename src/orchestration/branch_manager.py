@@ -74,7 +74,7 @@ class BranchManager:
         """
         from .models import Branch, BranchStatus
 
-        branch_id = str(uuid.uuid4())[:8]
+        branch_id = str(uuid.uuid4())
 
         branch = Branch(
             id=branch_id,
@@ -171,6 +171,7 @@ class BranchManager:
         from .models import BranchStatus
 
         branch.status = BranchStatus.PRUNED
+        branch.prune_reason = reason or None
         branch.updated_at = datetime.now()
 
         logger.info(
@@ -187,6 +188,8 @@ class BranchManager:
         """
         old_status = branch.status
         branch.status = status
+        if status == BranchStatus.RUNNING:
+            branch.failure_reason = None
         branch.updated_at = datetime.now()
 
         logger.debug(

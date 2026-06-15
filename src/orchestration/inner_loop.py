@@ -13,6 +13,9 @@ import re
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from ..domain.enums import SummaryValidationStatus
+from ..domain.summaries import classify_summary_validation
+
 if TYPE_CHECKING:
     from ..semantic_scholar import SemanticScholarAdapter, PaperDetails, SearchFilters
     from ..llm.protocols import LLMProvider
@@ -434,23 +437,44 @@ class InnerLoop:
         """
         Summarize a single paper and validate with HaluGate.
 
-        Returns None if validation fails.
+        Returns None unless validation passes the configured threshold.
         """
-        from .models import ValidatedSummary
-        from ..summarize import summarize_paper
+        result = await self._summarize_and_validate_result(paper)
+        return result.to_validated_summary()
+
+    async def _summarize_and_validate_result(
+        self,
+        paper: PaperDetails,
+    ) -> SummaryGenerationResult:
+        """Summarize a paper and preserve every validation outcome."""
+        from .models import SummaryGenerationResult
+        from ..summarize import summarize_paper_with_provenance
 
         # Use the Overseer pattern: generate-validate-retry
         context = paper.full_text or paper.abstract or ""
         if not context:
             logger.warning(f"No content for paper {paper.paper_id}")
-            return None
+            return SummaryGenerationResult(
+                paper_id=paper.paper_id,
+                paper_title=paper.title or "Unknown",
+                summary=None,
+                groundedness=None,
+                validation_status=SummaryValidationStatus.FAILED_VALIDATION,
+                attempts=0,
+                error="No source text available for validation",
+            )
 
         question = f"Summarize the paper: {paper.title}"
         best_summary = None
         best_groundedness = 0.0
+        best_details: dict = {}
+        best_status = SummaryValidationStatus.FAILED_VALIDATION
+        last_error: str | None = None
+        attempts = 0
 
         # Try up to 2 times with stricter guidance on retry
         for attempt in range(2):
+            attempts = attempt + 1
             guidance = None
             if attempt > 0:
                 guidance = (
@@ -460,13 +484,15 @@ class InnerLoop:
 
             # Generate summary
             try:
-                summary_text = await summarize_paper(
+                completion = await summarize_paper_with_provenance(
                     paper=paper,
                     provider=self.summarizer,
                     guidance=guidance,
                 )
+                summary_text = completion.text
             except Exception as e:
                 logger.warning(f"Summarization error for {paper.paper_id}: {e}")
+                last_error = str(e)
                 continue
 
             # Validate with HaluGate
@@ -479,6 +505,10 @@ class InnerLoop:
                 groundedness = self.halugate.compute_groundedness(result, summary_text)
             except Exception as e:
                 logger.warning(f"Validation error for {paper.paper_id}: {e}")
+                last_error = str(e)
+                best_summary = best_summary or summary_text
+                best_status = SummaryValidationStatus.FAILED_VALIDATION
+                best_details = {"validation_error": str(e)}
                 continue
 
             logger.debug(
@@ -486,32 +516,55 @@ class InnerLoop:
                 f"groundedness={groundedness:.2%}"
             )
 
+            status = classify_summary_validation(
+                groundedness_score=groundedness,
+                threshold=self.groundedness_threshold,
+                nli_contradictions=result.nli_contradictions,
+            )
+            details = {
+                "nli_contradictions": result.nli_contradictions,
+                "hallucinated_span_count": len(result.spans),
+                "threshold": self.groundedness_threshold,
+            }
+
             # Track best attempt
             if groundedness > best_groundedness:
                 best_groundedness = groundedness
                 best_summary = summary_text
+                best_status = status
+                best_details = details
 
             # Check if good enough
-            if groundedness >= self.groundedness_threshold and result.nli_contradictions == 0:
-                return ValidatedSummary(
+            if status == SummaryValidationStatus.VALIDATED:
+                return SummaryGenerationResult(
                     paper_id=paper.paper_id,
                     paper_title=paper.title or "Unknown",
                     summary=summary_text,
                     groundedness=groundedness,
+                    validation_status=status,
+                    validation_details=details,
+                    attempts=attempts,
+                    generation_provenance=completion.provenance,
                     timestamp=datetime.now(),
                 )
 
-        # Return best attempt if it meets a lower threshold (for partial results)
-        if best_summary and best_groundedness >= 0.7:
+        if best_summary:
             logger.warning(
-                f"Paper {paper.paper_id} only achieved {best_groundedness:.2%} groundedness "
-                f"(below {self.groundedness_threshold:.0%} threshold)"
+                f"Paper {paper.paper_id} did not pass validation "
+                f"(status={best_status.value}, best groundedness={best_groundedness:.2%})"
             )
-            return ValidatedSummary(
+            return SummaryGenerationResult(
                 paper_id=paper.paper_id,
                 paper_title=paper.title or "Unknown",
                 summary=best_summary,
                 groundedness=best_groundedness,
+                validation_status=best_status,
+                validation_details=best_details,
+                attempts=attempts,
+                error=last_error,
+                generation_provenance=(
+                    completion.provenance if "completion" in locals() else None
+                ),
                 timestamp=datetime.now(),
             )
 
@@ -519,7 +572,17 @@ class InnerLoop:
             f"Paper {paper.paper_id} failed validation after 2 attempts "
             f"(best groundedness: {best_groundedness:.2%})"
         )
-        return None
+        return SummaryGenerationResult(
+            paper_id=paper.paper_id,
+            paper_title=paper.title or "Unknown",
+            summary=None,
+            groundedness=None,
+            validation_status=SummaryValidationStatus.FAILED_VALIDATION,
+            validation_details=best_details,
+            attempts=attempts,
+            error=last_error or "Summary generation failed",
+            timestamp=datetime.now(),
+        )
 
     async def generate_hypotheses(
         self,
@@ -548,8 +611,17 @@ class InnerLoop:
             logger.warning("No summaries to generate hypotheses from")
             return []
 
+        eligible_summaries = [
+            summary
+            for summary in summaries
+            if getattr(summary, "accepted_for_downstream_use", True)
+        ]
+        if not eligible_summaries:
+            logger.warning("No validation-eligible summaries for hypothesis generation")
+            return []
+
         return await self.hypothesis_generator.generate(
-            summaries=summaries,
+            summaries=eligible_summaries,
             branch_id=branch_id,
             context=context,
         )

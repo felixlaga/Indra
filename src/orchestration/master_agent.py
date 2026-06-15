@@ -595,7 +595,17 @@ class MasterAgent:
 
             except Exception as e:
                 logger.error(f"Error running iteration on branch {branch.id}: {e}")
-                self.prune_branch(branch.id, f"Error: {e}")
+                branch.status = BranchStatus.FAILED
+                branch.failure_reason = f"Error: {e}"
+                branch.updated_at = datetime.now()
+                if self._convex_client:
+                    await self._convex_client.emit_branch_status_changed(
+                        branch_id=branch.id,
+                        status=branch.status.value,
+                        context_used=branch.context_window_used,
+                        paper_count=branch.total_papers,
+                        summary_count=branch.total_summaries,
+                    )
 
             # Check hypothesis stopping condition
             if stop_on_hypotheses > 0:

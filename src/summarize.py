@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from .semantic_scholar import PaperDetails
 from .llm import OpenRouterAdapter, LLMProvider
+from .domain.provenance import LLMCompletion
 
 if TYPE_CHECKING:
     from .orchestration import Overseer
@@ -65,6 +66,43 @@ Provide a concise summary."""
     else:
         async with OpenRouterAdapter() as llm:
             return await llm.complete(prompt, system_prompt, temperature)
+
+
+async def summarize_paper_with_provenance(
+    paper: PaperDetails,
+    provider: LLMProvider,
+    system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+    temperature: float = 0.3,
+    guidance: str | None = None,
+) -> LLMCompletion:
+    """Summarize a paper and return model/prompt provenance."""
+
+    content = paper.full_text or paper.abstract or "No content available"
+    max_chars = 30000
+    if len(content) > max_chars:
+        content = content[:max_chars] + "\n\n[Content truncated...]"
+
+    guidance_section = f"\n\nGuidance: {guidance}" if guidance else ""
+    prompt = f"""Paper: {paper.title}
+Authors: {', '.join(a.name or 'Unknown' for a in paper.authors[:5])}
+Year: {paper.year}
+
+Content:
+{content}{guidance_section}
+
+Provide a concise summary."""
+
+    if hasattr(provider, "complete_structured"):
+        return await provider.complete_structured(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            prompt_name="paper_summary",
+            prompt_version="v1",
+        )
+
+    text = await provider.complete(prompt, system_prompt, temperature)
+    return LLMCompletion(text=text, provenance=None)
 
 
 async def summarize_papers(

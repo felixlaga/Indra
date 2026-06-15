@@ -254,6 +254,8 @@ def test_claim_validation_stores_evidence_and_updates_status():
     assert result["claim"]["status"] == "supported"
     assert result["claim"]["confidence"] == 0.93
     assert result["evidence"][0]["relation"] == "supports"
+    assert result["evidence"][0]["source_type"] == "manual"
+    assert result["evidence"][0]["reviewer_id"] == "api_user"
     assert result["evidence"][0]["claim_id"] == claim["id"]
 
     claim_response = client.get(f"/claims/{claim['id']}")
@@ -276,6 +278,34 @@ def test_claim_validation_stores_evidence_and_updates_status():
     assert claim_validated["payload"]["evidence_ids"] == [
         result["evidence"][0]["id"]
     ]
+
+
+def test_claim_validation_rejects_malformed_evidence_locator():
+    client = make_client()
+    session = client.post(
+        "/sessions",
+        json={"initial_query": "claim validation locator checks"},
+    ).json()
+    claim = client.post(
+        f"/sessions/{session['id']}/claims/extract",
+        json={"source_text": "The paper reports a benchmark result."},
+    ).json()[0]
+
+    response = client.post(
+        f"/claims/{claim['id']}/validate",
+        json={
+            "evidence": [
+                {
+                    "evidence_text": "Missing chunk locator.",
+                    "relation": "supports",
+                    "source_type": "paper_chunk",
+                    "paper_id": "00000000-0000-0000-0000-000000000001",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_branch_split_patch_and_prune():

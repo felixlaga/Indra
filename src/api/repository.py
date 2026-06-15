@@ -8,9 +8,14 @@ from datetime import datetime, timezone
 from queue import Queue
 from threading import Lock
 from typing import TYPE_CHECKING, Protocol
-from uuid import uuid4
 
 from ..claims import ClaimExtractor, ClaimVerifier, EvidenceInput
+from ..domain.ids import new_uuid_str
+from ..domain.transitions import (
+    InvalidTransitionError,
+    validate_branch_transition,
+    validate_session_transition,
+)
 from .models import (
     Branch,
     BranchCreate,
@@ -30,8 +35,11 @@ from .models import (
     ResearchSession,
     RuntimeLoopBinding,
     SessionCreate,
+    SessionPaper,
+    SessionPaperView,
     SessionSnapshot,
     SessionStatus,
+    Summary,
 )
 from .research_loop import ResearchLoopBridge
 
@@ -102,7 +110,7 @@ class ProductRepository(Protocol):
 
     def update_branch(self, branch_id: str, payload: BranchPatch) -> Branch: ...
 
-    def list_papers(self, session_id: str) -> list[Paper]: ...
+    def list_papers(self, session_id: str) -> list[SessionPaperView]: ...
 
     def get_paper(self, paper_id: str) -> Paper: ...
 
@@ -154,6 +162,8 @@ class InMemoryRepository:
         self._sessions: dict[str, ResearchSession] = {}
         self._branches: dict[str, Branch] = {}
         self._papers: dict[str, Paper] = {}
+        self._session_papers: dict[str, SessionPaper] = {}
+        self._summaries: dict[str, Summary] = {}
         self._claims: dict[str, Claim] = {}
         self._claim_evidence: dict[str, ClaimEvidence] = {}
         self._events: dict[str, Event] = {}
@@ -282,6 +292,7 @@ class InMemoryRepository:
                 runtime_loop=self._runtime_loop_bindings.get(session_id),
                 branches=self._list_branches_unlocked(session_id),
                 papers=self._list_papers_unlocked(session_id),
+                summaries=self._list_summaries_unlocked(session_id),
                 claims=self._list_claims_unlocked(session_id),
                 claim_evidence=self._list_claim_evidence_for_session_unlocked(
                     session_id
@@ -373,10 +384,10 @@ class InMemoryRepository:
 
         with self._lock:
             branch = self._get_branch_unlocked(branch_id)
-            if branch.status == BranchStatus.PRUNED:
-                raise ConflictError("Cannot continue a pruned branch")
+            self._validate_branch_transition(branch.status, BranchStatus.RUNNING)
 
             branch.status = BranchStatus.RUNNING
+            branch.failure_reason = None
             branch.updated_at = utc_now()
             self._branches[branch.id] = branch
             self._create_event_unlocked(
@@ -396,8 +407,8 @@ class InMemoryRepository:
 
         with self._lock:
             parent = self._get_branch_unlocked(branch_id)
-            if parent.status == BranchStatus.PRUNED:
-                raise ConflictError("Cannot split a pruned branch")
+            if parent.status in {BranchStatus.PRUNED, BranchStatus.COMPLETED}:
+                raise ConflictError(f"Cannot split a {parent.status.value} branch")
 
             now = utc_now()
             children: list[Branch] = []
@@ -431,7 +442,9 @@ class InMemoryRepository:
 
         with self._lock:
             branch = self._get_branch_unlocked(branch_id)
+            self._validate_branch_transition(branch.status, BranchStatus.PRUNED)
             branch.status = BranchStatus.PRUNED
+            branch.prune_reason = branch.prune_reason or "Pruned through API request."
             branch.updated_at = utc_now()
             self._branches[branch.id] = branch
             self._create_event_unlocked(
@@ -449,6 +462,8 @@ class InMemoryRepository:
             branch = self._get_branch_unlocked(branch_id)
             update = payload.model_dump(exclude_unset=True)
             event_payload = payload.model_dump(exclude_unset=True, mode="json")
+            if "status" in update:
+                self._validate_branch_transition(branch.status, update["status"])
             for field_name, value in update.items():
                 setattr(branch, field_name, value)
             branch.updated_at = utc_now()
@@ -461,7 +476,7 @@ class InMemoryRepository:
             )
             return branch
 
-    def list_papers(self, session_id: str) -> list[Paper]:
+    def list_papers(self, session_id: str) -> list[SessionPaperView]:
         """List papers for a session."""
 
         with self._lock:
@@ -488,9 +503,7 @@ class InMemoryRepository:
                 if branch.session_id != session_id:
                     raise NotFoundError("Branch not found")
             if payload.paper_id:
-                paper = self._get_paper_unlocked(payload.paper_id)
-                if paper.session_id != session_id:
-                    raise NotFoundError("Paper not found")
+                self._ensure_paper_in_session_unlocked(payload.paper_id, session_id)
 
             now = utc_now()
             extracted = self._claim_extractor.extract(
@@ -556,16 +569,24 @@ class InMemoryRepository:
             evidence_items: list[ClaimEvidence] = []
             for evidence_payload in payload.evidence:
                 if evidence_payload.paper_id:
-                    paper = self._get_paper_unlocked(evidence_payload.paper_id)
-                    if paper.session_id != claim.session_id:
-                        raise NotFoundError("Paper not found")
+                    self._ensure_paper_in_session_unlocked(
+                        evidence_payload.paper_id,
+                        claim.session_id,
+                    )
 
                 evidence = ClaimEvidence(
                     id=self._new_id("evd"),
                     claim_id=claim.id,
                     session_id=claim.session_id,
+                    source_type=evidence_payload.source_type,
                     paper_id=evidence_payload.paper_id,
                     chunk_id=evidence_payload.chunk_id,
+                    metadata_field=evidence_payload.metadata_field,
+                    upload_id=evidence_payload.upload_id,
+                    document_id=evidence_payload.document_id,
+                    external_uri=evidence_payload.external_uri,
+                    source_id=evidence_payload.source_id,
+                    reviewer_id=evidence_payload.reviewer_id,
                     evidence_text=evidence_payload.evidence_text,
                     relation=evidence_payload.relation,
                     score=evidence_payload.score,
@@ -672,7 +693,13 @@ class InMemoryRepository:
 
     def _get_paper_unlocked(self, paper_id: str) -> Paper:
         for paper in self._papers.values():
-            if paper.id == paper_id or paper.paper_id == paper_id:
+            external_ids = {
+                paper.semantic_scholar_id,
+                paper.arxiv_id,
+                paper.doi,
+                paper.openalex_id,
+            }
+            if paper.id == paper_id or paper_id in external_ids:
                 return paper
         raise NotFoundError("Paper not found")
 
@@ -689,12 +716,51 @@ class InMemoryRepository:
             if branch.session_id == session_id
         ]
 
-    def _list_papers_unlocked(self, session_id: str) -> list[Paper]:
-        return [
-            paper
-            for paper in self._papers.values()
-            if paper.session_id == session_id
+    def _list_papers_unlocked(self, session_id: str) -> list[SessionPaperView]:
+        views: list[SessionPaperView] = []
+        for session_paper in self._session_papers.values():
+            if session_paper.session_id != session_id:
+                continue
+            paper = self._papers.get(session_paper.paper_id)
+            if paper is None:
+                continue
+            views.append(
+                SessionPaperView(
+                    id=session_paper.id,
+                    session_id=session_paper.session_id,
+                    branch_id=session_paper.branch_id,
+                    paper_id=paper.id,
+                    discovery_method=session_paper.discovery_method,
+                    selection_reason=session_paper.selection_reason,
+                    selected=session_paper.selected,
+                    iteration_number=session_paper.iteration_number,
+                    paper=paper,
+                    created_at=session_paper.created_at,
+                )
+            )
+        return sorted(views, key=lambda view: view.created_at)
+
+    def _list_summaries_unlocked(self, session_id: str) -> list[Summary]:
+        summaries = [
+            summary
+            for summary in self._summaries.values()
+            if summary.session_id == session_id
         ]
+        return sorted(summaries, key=lambda summary: summary.created_at)
+
+    def _ensure_paper_in_session_unlocked(
+        self,
+        paper_id: str,
+        session_id: str,
+    ) -> None:
+        paper = self._get_paper_unlocked(paper_id)
+        for session_paper in self._session_papers.values():
+            if (
+                session_paper.session_id == session_id
+                and session_paper.paper_id == paper.id
+            ):
+                return
+        raise NotFoundError("Paper not found")
 
     def _list_claims_unlocked(self, session_id: str) -> list[Claim]:
         claims = [
@@ -764,12 +830,20 @@ class InMemoryRepository:
         current: SessionStatus,
         target: SessionStatus,
     ) -> None:
-        if current in {SessionStatus.COMPLETED, SessionStatus.CANCELLED}:
-            raise ConflictError(f"Session is already {current.value}")
-        if target == SessionStatus.PAUSED and current != SessionStatus.RUNNING:
-            raise ConflictError("Only running sessions can be paused")
-        if target == SessionStatus.RUNNING and current == SessionStatus.FAILED:
-            raise ConflictError("Failed sessions cannot be resumed in the API skeleton")
+        try:
+            validate_session_transition(current, target)
+        except InvalidTransitionError as exc:
+            raise ConflictError(str(exc)) from exc
+
+    def _validate_branch_transition(
+        self,
+        current: BranchStatus,
+        target: BranchStatus,
+    ) -> None:
+        try:
+            validate_branch_transition(current, target)
+        except InvalidTransitionError as exc:
+            raise ConflictError(str(exc)) from exc
 
     def _new_id(self, prefix: str) -> str:
-        return f"{prefix}_{uuid4().hex[:12]}"
+        return new_uuid_str()

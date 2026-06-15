@@ -121,13 +121,30 @@ class HypothesisGenerator:
         )
 
         try:
-            response = await self.llm.complete(
-                prompt=prompt,
-                system_prompt=HYPOTHESIS_SYSTEM_PROMPT,
-                temperature=self.temperature,
-            )
+            provenance = None
+            if hasattr(self.llm, "complete_structured"):
+                completion = await self.llm.complete_structured(
+                    prompt=prompt,
+                    system_prompt=HYPOTHESIS_SYSTEM_PROMPT,
+                    temperature=self.temperature,
+                    prompt_name="hypothesis_generation",
+                    prompt_version="v1",
+                )
+                response = completion.text
+                provenance = completion.provenance
+            else:
+                response = await self.llm.complete(
+                    prompt=prompt,
+                    system_prompt=HYPOTHESIS_SYSTEM_PROMPT,
+                    temperature=self.temperature,
+                )
 
-            hypotheses = self._parse_response(response, paper_id_map, branch_id)
+            hypotheses = self._parse_response(
+                response,
+                paper_id_map,
+                branch_id,
+                generation_provenance=provenance,
+            )
             logger.info(f"Generated {len(hypotheses)} hypotheses from {len(summaries)} summaries")
             return hypotheses
 
@@ -140,6 +157,7 @@ class HypothesisGenerator:
         response: str,
         paper_id_map: dict[str, str],
         branch_id: str,
+        generation_provenance=None,
     ) -> list[ResearchHypothesis]:
         """Parse LLM response into hypothesis objects."""
         from ..orchestration.models import ResearchHypothesis
@@ -189,6 +207,7 @@ class HypothesisGenerator:
                     supporting_paper_ids=supporting_ids,
                     confidence=confidence,
                     generated_from_branch=branch_id,
+                    generation_provenance=generation_provenance,
                     timestamp=datetime.now(),
                 )
                 hypotheses.append(hypothesis)

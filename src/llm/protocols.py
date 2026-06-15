@@ -4,6 +4,8 @@ from enum import Enum
 from typing import Protocol, runtime_checkable
 from pydantic import BaseModel
 
+from ..domain.provenance import LLMCompletion
+
 
 class MessageRole(str, Enum):
     """Role of a message in a conversation."""
@@ -46,6 +48,18 @@ class LLMProvider(Protocol):
         Returns:
             The generated text
         """
+        ...
+
+    async def complete_structured(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        prompt_name: str = "ad_hoc_completion",
+        prompt_version: str = "v1",
+    ) -> LLMCompletion:
+        """Generate a completion with model and prompt provenance."""
         ...
 
     async def complete_messages(

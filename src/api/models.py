@@ -3,77 +3,23 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-
-class SessionStatus(str, Enum):
-    """Allowed research session statuses."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
-    FAILED = "failed"
-
-
-class BranchStatus(str, Enum):
-    """Allowed branch statuses."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-    PRUNED = "pruned"
-    FAILED = "failed"
-
-
-class BranchMode(str, Enum):
-    """Allowed branch modes."""
-
-    SEARCH_SUMMARIZE = "search_summarize"
-    HYPOTHESIS = "hypothesis"
-    SYNTHESIS = "synthesis"
-    GAP_ANALYSIS = "gap_analysis"
-
-
-class ClaimType(str, Enum):
-    """Allowed claim types."""
-
-    FACTUAL = "factual"
-    METHODOLOGICAL = "methodological"
-    EMPIRICAL_RESULT = "empirical_result"
-    THEORETICAL_RESULT = "theoretical_result"
-    DEFINITION = "definition"
-    LIMITATION = "limitation"
-    ASSUMPTION = "assumption"
-    COMPARISON = "comparison"
-    HYPOTHESIS = "hypothesis"
-    RECOMMENDATION = "recommendation"
-
-
-class ClaimStatus(str, Enum):
-    """Allowed claim statuses."""
-
-    SUPPORTED = "supported"
-    WEAKLY_SUPPORTED = "weakly_supported"
-    CONTRADICTED = "contradicted"
-    NOT_FOUND = "not_found"
-    SPECULATIVE = "speculative"
-    NEEDS_REVIEW = "needs_review"
-
-
-class EvidenceRelation(str, Enum):
-    """Allowed claim evidence relations."""
-
-    SUPPORTS = "supports"
-    WEAKLY_SUPPORTS = "weakly_supports"
-    CONTRADICTS = "contradicts"
-    MENTIONS = "mentions"
-    INSUFFICIENT = "insufficient"
+from ..domain.enums import (
+    BranchMode,
+    BranchStatus,
+    ClaimStatus,
+    ClaimType,
+    EventSeverity,
+    EvidenceRelation,
+    EvidenceSourceType,
+    PaperDiscoveryMethod,
+    SessionStatus,
+    SummaryType,
+    SummaryValidationStatus,
+)
 
 
 class ProjectCreate(BaseModel):
@@ -108,6 +54,7 @@ class ResearchSession(SessionCreate):
 
     id: str
     status: SessionStatus = SessionStatus.PENDING
+    failure_reason: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
     created_at: datetime
@@ -130,6 +77,8 @@ class BranchPatch(BaseModel):
     label: str | None = None
     rationale: str | None = None
     status: BranchStatus | None = None
+    prune_reason: str | None = None
+    failure_reason: str | None = None
 
 
 class Branch(BranchCreate):
@@ -139,6 +88,8 @@ class Branch(BranchCreate):
     session_id: str
     parent_branch_id: str | None = None
     status: BranchStatus = BranchStatus.PENDING
+    prune_reason: str | None = None
+    failure_reason: str | None = None
     depth: int = 0
     context_tokens_used: int = 0
     max_context_tokens: int | None = None
@@ -153,18 +104,76 @@ class BranchSplitRequest(BaseModel):
 
 
 class Paper(BaseModel):
-    """Normalized paper metadata exposed by the product API."""
+    """Global paper metadata exposed by the product API."""
+
+    id: str
+    canonical_key: str
+    semantic_scholar_id: str | None = None
+    arxiv_id: str | None = None
+    doi: str | None = None
+    openalex_id: str | None = None
+    title: str
+    abstract: str | None = None
+    authors: list[dict[str, Any]] = Field(default_factory=list)
+    year: int | None = None
+    venue: str | None = None
+    citation_count: int | None = None
+    reference_count: int | None = None
+    influential_citation_count: int | None = None
+    url: str | None = None
+    pdf_url: str | None = None
+    open_access_pdf_url: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class SessionPaper(BaseModel):
+    """Contextual discovery record connecting a paper to a session/branch."""
+
+    id: str
+    session_id: str
+    paper_id: str
+    branch_id: str | None = None
+    discovery_method: PaperDiscoveryMethod | None = None
+    selection_reason: str | None = None
+    selected: bool = False
+    iteration_number: int | None = None
+    created_at: datetime
+
+
+class SessionPaperView(BaseModel):
+    """Session paper read model with global metadata plus discovery context."""
 
     id: str
     session_id: str
     branch_id: str | None = None
     paper_id: str
-    title: str
-    abstract: str | None = None
-    year: int | None = None
-    venue: str | None = None
-    citation_count: int | None = None
+    discovery_method: PaperDiscoveryMethod | None = None
+    selection_reason: str | None = None
+    selected: bool = False
+    iteration_number: int | None = None
+    paper: Paper
     created_at: datetime
+
+
+class Summary(BaseModel):
+    """Generated summary with explicit validation status."""
+
+    id: str
+    session_id: str
+    summary_type: SummaryType
+    text: str
+    branch_id: str | None = None
+    paper_id: str | None = None
+    groundedness_score: float | None = Field(default=None, ge=0, le=1)
+    validation_status: SummaryValidationStatus = (
+        SummaryValidationStatus.NOT_VALIDATED
+    )
+    validation_details: dict[str, Any] = Field(default_factory=dict)
+    generation_provenance: dict[str, Any] | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class ClaimExtractionRequest(BaseModel):
@@ -200,12 +209,50 @@ class ClaimEvidenceCreate(BaseModel):
 
     evidence_text: str = Field(min_length=1)
     relation: EvidenceRelation
+    source_type: EvidenceSourceType = EvidenceSourceType.MANUAL
     paper_id: str | None = None
     chunk_id: str | None = None
+    metadata_field: str | None = None
+    upload_id: str | None = None
+    document_id: str | None = None
+    external_uri: str | None = None
+    source_id: str | None = None
+    reviewer_id: str | None = "api_user"
     score: float | None = Field(default=None, ge=0, le=1)
     page_start: int | None = Field(default=None, ge=1)
     page_end: int | None = Field(default=None, ge=1)
     section_title: str | None = None
+
+    @model_validator(mode="after")
+    def validate_source_locator(self) -> "ClaimEvidenceCreate":
+        """Validate source-specific evidence locator requirements."""
+
+        if (
+            self.page_start is not None
+            and self.page_end is not None
+            and self.page_end < self.page_start
+        ):
+            raise ValueError("page_end cannot precede page_start")
+
+        if self.source_type == EvidenceSourceType.PAPER_CHUNK:
+            if not self.paper_id or not self.chunk_id:
+                raise ValueError("paper_chunk evidence requires paper_id and chunk_id")
+        elif self.source_type == EvidenceSourceType.PAPER_ABSTRACT:
+            if not self.paper_id:
+                raise ValueError("paper_abstract evidence requires paper_id")
+        elif self.source_type == EvidenceSourceType.PAPER_METADATA:
+            if not self.paper_id or not self.metadata_field:
+                raise ValueError("paper_metadata evidence requires paper_id and metadata_field")
+        elif self.source_type == EvidenceSourceType.USER_UPLOAD:
+            if not (self.upload_id or self.document_id):
+                raise ValueError("user_upload evidence requires upload_id or document_id")
+        elif self.source_type == EvidenceSourceType.EXTERNAL_SOURCE:
+            if not (self.external_uri or self.source_id):
+                raise ValueError("external_source evidence requires external_uri or source_id")
+        elif self.source_type == EvidenceSourceType.MANUAL:
+            if not self.reviewer_id:
+                raise ValueError("manual evidence requires reviewer_id")
+        return self
 
 
 class ClaimValidationRequest(BaseModel):
@@ -222,8 +269,15 @@ class ClaimEvidence(BaseModel):
     id: str
     claim_id: str
     session_id: str
+    source_type: EvidenceSourceType
     paper_id: str | None = None
     chunk_id: str | None = None
+    metadata_field: str | None = None
+    upload_id: str | None = None
+    document_id: str | None = None
+    external_uri: str | None = None
+    source_id: str | None = None
+    reviewer_id: str | None = None
     evidence_text: str
     relation: EvidenceRelation
     score: float | None = Field(default=None, ge=0, le=1)
@@ -249,7 +303,7 @@ class Event(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     branch_id: str | None = None
     paper_id: str | None = None
-    severity: str = "info"
+    severity: EventSeverity = EventSeverity.INFO
     created_at: datetime
 
 
@@ -270,7 +324,8 @@ class SessionSnapshot(BaseModel):
     session: ResearchSession
     runtime_loop: RuntimeLoopBinding | None = None
     branches: list[Branch] = Field(default_factory=list)
-    papers: list[Paper] = Field(default_factory=list)
+    papers: list[SessionPaperView] = Field(default_factory=list)
+    summaries: list[Summary] = Field(default_factory=list)
     claims: list[Claim] = Field(default_factory=list)
     claim_evidence: list[ClaimEvidence] = Field(default_factory=list)
     events: list[Event] = Field(default_factory=list)

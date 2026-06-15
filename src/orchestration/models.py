@@ -4,43 +4,82 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from typing import TYPE_CHECKING
+
+from ..domain.enums import BranchMode, BranchStatus, SummaryValidationStatus
+from ..domain.provenance import GenerationProvenance
 
 if TYPE_CHECKING:
     from ..semantic_scholar import PaperDetails, SearchFilters
 
 
-class BranchStatus(Enum):
-    """Status of a research branch."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-    PRUNED = "pruned"
-
-
-class InnerLoopMode(Enum):
-    """Mode of the inner loop."""
-
-    SEARCH_SUMMARIZE = "search_summarize"  # Variant A: search → summarize → validate
-    HYPOTHESIS = "hypothesis"  # Variant B: same + generate hypotheses
+InnerLoopMode = BranchMode
 
 
 @dataclass
 class ValidatedSummary:
-    """A summary that has passed HaluGate validation."""
+    """Compatibility type for summaries that passed validation."""
 
     paper_id: str
     paper_title: str
     summary: str
     groundedness: float  # Must be ≥0.95 for research loop
+    validation_status: SummaryValidationStatus = SummaryValidationStatus.VALIDATED
+    validation_details: dict = field(default_factory=dict)
+    attempts: int = 1
+    generation_provenance: GenerationProvenance | None = None
     timestamp: datetime = field(default_factory=datetime.now)
 
     def __post_init__(self):
         if self.groundedness < 0:
             raise ValueError("Groundedness must be non-negative")
+        if self.validation_status != SummaryValidationStatus.VALIDATED:
+            raise ValueError("ValidatedSummary cannot represent partial or failed validation")
+
+    @property
+    def accepted_for_downstream_use(self) -> bool:
+        """Return whether this summary may feed hypotheses by default."""
+
+        return self.validation_status == SummaryValidationStatus.VALIDATED
+
+
+@dataclass
+class SummaryGenerationResult:
+    """Preserves generated summary text for every validation outcome."""
+
+    paper_id: str
+    paper_title: str
+    summary: str | None
+    groundedness: float | None
+    validation_status: SummaryValidationStatus
+    validation_details: dict = field(default_factory=dict)
+    attempts: int = 0
+    error: str | None = None
+    generation_provenance: GenerationProvenance | None = None
+    timestamp: datetime = field(default_factory=datetime.now)
+
+    @property
+    def accepted_for_downstream_use(self) -> bool:
+        """Default downstream policy: only fully validated summaries are eligible."""
+
+        return self.validation_status == SummaryValidationStatus.VALIDATED
+
+    def to_validated_summary(self) -> ValidatedSummary | None:
+        """Return the compatibility type only for fully validated summaries."""
+
+        if not self.accepted_for_downstream_use or self.summary is None:
+            return None
+        return ValidatedSummary(
+            paper_id=self.paper_id,
+            paper_title=self.paper_title,
+            summary=self.summary,
+            groundedness=self.groundedness or 0.0,
+            validation_status=self.validation_status,
+            validation_details=self.validation_details,
+            attempts=self.attempts,
+            generation_provenance=self.generation_provenance,
+            timestamp=self.timestamp,
+        )
 
 
 @dataclass
@@ -52,6 +91,7 @@ class ResearchHypothesis:
     supporting_paper_ids: list[str]
     confidence: float  # 0-1 confidence score
     generated_from_branch: str
+    generation_provenance: GenerationProvenance | None = None
     timestamp: datetime = field(default_factory=datetime.now)
 
     def __post_init__(self):
@@ -90,6 +130,8 @@ class Branch:
     mode: InnerLoopMode
     status: BranchStatus
     parent_branch_id: str | None = None
+    prune_reason: str | None = None
+    failure_reason: str | None = None
     filters: SearchFilters | None = None
     iterations: list[IterationResult] = field(default_factory=list)
     accumulated_papers: dict[str, PaperDetails] = field(default_factory=dict)

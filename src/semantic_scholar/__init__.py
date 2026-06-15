@@ -9,9 +9,6 @@ from .models import (
     SearchResponse,
 )
 from .protocols import PaperSearchProvider, PDFExtractor, CitationProvider
-from .adapters import SemanticScholarAdapter
-from .client import SemanticScholarClient
-from .search import search_papers, fetch_papers, fetch_papers_with_text, download_and_extract_pdf
 
 __all__ = [
     # Models
@@ -35,3 +32,24 @@ __all__ = [
     "fetch_papers_with_text",
     "download_and_extract_pdf",
 ]
+
+
+def __getattr__(name: str):
+    if name == "SemanticScholarAdapter":
+        from .adapters import SemanticScholarAdapter
+
+        return SemanticScholarAdapter
+    if name == "SemanticScholarClient":
+        from .client import SemanticScholarClient
+
+        return SemanticScholarClient
+    if name in {
+        "search_papers",
+        "fetch_papers",
+        "fetch_papers_with_text",
+        "download_and_extract_pdf",
+    }:
+        from . import search
+
+        return getattr(search, name)
+    raise AttributeError(f"module 'src.semantic_scholar' has no attribute {name!r}")

@@ -14,7 +14,11 @@ export const create = mutation({
       sessionId: args.sessionId,
       branchId: args.branchId,
       query: args.query,
-      mode: args.mode as "search_summarize" | "hypothesis",
+      mode: args.mode as
+        | "search_summarize"
+        | "hypothesis"
+        | "synthesis"
+        | "gap_analysis",
       status: "pending",
       parentBranchId: args.parentBranchId,
       contextWindowUsed: 0,

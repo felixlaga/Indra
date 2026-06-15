@@ -58,7 +58,9 @@ export const updateStatus = mutation({
     status: v.union(
       v.literal("pending"),
       v.literal("running"),
+      v.literal("paused"),
       v.literal("completed"),
+      v.literal("cancelled"),
       v.literal("failed")
     ),
   },

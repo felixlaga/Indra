@@ -402,6 +402,12 @@ class ConvexClient:
                 "paperTitle": summary.paper_title,
                 "summary": summary.summary,
                 "groundedness": summary.groundedness,
+                "validationStatus": summary.validation_status.value,
+                "generationProvenance": (
+                    summary.generation_provenance.model_dump(mode="json")
+                    if summary.generation_provenance
+                    else None
+                ),
                 "iterationNumber": iteration,
             },
         )
@@ -413,6 +419,7 @@ class ConvexClient:
                 "paperId": summary.paper_id,
                 "paperTitle": summary.paper_title,
                 "groundedness": summary.groundedness,
+                "validationStatus": summary.validation_status.value,
             },
             branch_id,
         )
@@ -442,6 +449,12 @@ class ConvexClient:
                 "paperTitle": s.paper_title,
                 "summary": s.summary,
                 "groundedness": s.groundedness,
+                "validationStatus": s.validation_status.value,
+                "generationProvenance": (
+                    s.generation_provenance.model_dump(mode="json")
+                    if s.generation_provenance
+                    else None
+                ),
                 "iterationNumber": iteration,
             }
             for s in summaries
@@ -460,6 +473,7 @@ class ConvexClient:
                         "paperId": s.paper_id,
                         "paperTitle": s.paper_title,
                         "groundedness": s.groundedness,
+                        "validationStatus": s.validation_status.value,
                     }
                     for s in summaries[:5]
                 ],

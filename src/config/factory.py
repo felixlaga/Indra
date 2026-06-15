@@ -24,6 +24,31 @@ class MockLLMProvider:
         """Return a mock completion."""
         return f"[Mock summary of: {prompt[:50]}...]"
 
+    async def complete_structured(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        prompt_name: str = "mock_completion",
+        prompt_version: str = "v1",
+    ):
+        """Return a mock completion with provenance."""
+
+        from ..domain.provenance import GenerationProvenance, LLMCompletion
+
+        return LLMCompletion(
+            text=await self.complete(prompt, system_prompt, temperature, max_tokens),
+            provenance=GenerationProvenance(
+                provider="mock",
+                model="mock",
+                prompt_name=prompt_name,
+                prompt_version=prompt_version,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            ),
+        )
+
     async def complete_messages(
         self,
         messages: list,

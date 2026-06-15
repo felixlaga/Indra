@@ -1,0 +1,615 @@
+# Model Configuration Profiles
+#
+# This file defines named configuration profiles for different deployment scenarios.
+# Switch between profiles using the MODEL_PROFILE environment variable:
+#
+#   MODEL_PROFILE=dev-fast python test_integration.py
+#   MODEL_PROFILE=dev-accurate python test_integration.py
+#   MODEL_PROFILE=prod python test_integration.py
+#
+# Environment variable expansion is supported using ${VAR} syntax.
+#
+# Soft Guardrails Philosophy:
+# ---------------------------
+# Many configuration values in this file are "soft guardrails" - suggestions rather
+# than hard limits. The agent can override these when justified. This allows for:
+# - Flexible adaptation to different research domains
+# - Agent autonomy with reasonable defaults
+# - User transparency about expected behavior
+#
+# Soft guardrail sections:
+# - paper_selection: Range suggestions for papers to select
+# - branch_splitting: Thresholds that warn rather than force
+# - search: Suggestions for search behavior
+
+profiles:
+  # Fast iteration profile - mock validators for quick testing
+  # Uses real summarizer but mock hallucination detection
+  dev-fast:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: mock
+    overseer:
+      max_retries: 0  # No retries with mock
+
+  # Accurate development profile - all real models in-process
+  # Full 3-stage HaluGate pipeline with sentinel, detector, and NLI
+  dev-accurate:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: local
+      use_sentinel: true
+      device: cpu
+    overseer:
+      max_retries: 2
+      groundedness_threshold: 0.8
+
+  # Production profile - distributed deployment
+  # Requires running HaluGate as separate HTTP service
+  prod:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: http
+      url: ${HALUGATE_URL}
+    overseer:
+      max_retries: 2
+      groundedness_threshold: 0.85
+
+  # Claude Haiku - fast and cheap via OpenRouter
+  dev-haiku:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: mock
+    overseer:
+      max_retries: 0
+
+  # Claude Haiku with real validation
+  dev-haiku-accurate:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: local
+      use_sentinel: true
+      device: cpu
+    overseer:
+      max_retries: 2
+      groundedness_threshold: 0.8
+
+  # Testing profile - all mocks for fast automated tests
+  test:
+    summarizer:
+      backend: mock
+    halugate:
+      backend: mock
+    overseer:
+      max_retries: 0
+
+  # Local HTTP profile - test distributed architecture locally
+  # Start HaluGate server with: python -m src.halugate.server &
+  local-http:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: http
+      url: ${HALUGATE_URL}
+    overseer:
+      max_retries: 2
+      groundedness_threshold: 0.8
+
+  # Research Loop profile - for running the recursive research agent
+  # Uses mock HaluGate for fast iteration during development
+  research-fast:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: mock
+    overseer:
+      max_retries: 0
+    research_loop:
+      inner_loop:
+        groundedness_threshold: 0.95
+        max_papers_per_iteration: 10
+        parallel_summarization: true
+        max_summarization_concurrency: 3
+      iteration_loop:
+        max_iterations_per_branch: 5
+        citation_depth: 2
+        max_citations_per_paper: 3
+        max_references_per_paper: 3
+        include_references: false  # Skip references to speed up
+      branch:
+        max_context_window: 128000
+        context_split_threshold: 0.8
+        min_papers_for_hypothesis_mode: 5
+        max_branches: 5
+      master_agent:
+        max_parallel_branches: 3
+        auto_prune_enabled: true
+        auto_split_enabled: true
+        auto_hypothesis_mode: true
+      # Phase 5: Reflection Loop
+      reflection:
+        enabled: true
+        min_papers_for_reflection: 5
+        auto_search_gaps: true
+        max_gap_searches: 2
+        coverage_threshold: 0.8
+        reflection_interval: 1
+      # Soft guardrails (suggestions, agent can override with justification)
+      paper_selection:
+        suggested_range: [5, 20]  # agent can go outside if justified
+        diversity_reminder: true   # prompt includes diversity consideration
+      branch_splitting:
+        context_warning: 0.7      # agent gets notified, not forced to split
+        max_branches_suggestion: 3  # soft limit, agent can request more
+      search:
+        initial_pool_size: 30     # fetch many, agent filters down
+        min_papers_before_split: 5  # suggestion, not requirement
+
+  # Research Loop profile - accurate mode with real HaluGate
+  research-accurate:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: local
+      use_sentinel: true
+      device: cpu
+    overseer:
+      max_retries: 2
+      groundedness_threshold: 0.8
+    research_loop:
+      inner_loop:
+        groundedness_threshold: 0.95
+        max_papers_per_iteration: 20
+        parallel_summarization: true
+        max_summarization_concurrency: 5
+      iteration_loop:
+        max_iterations_per_branch: 10
+        citation_depth: 2
+        max_citations_per_paper: 20
+        max_references_per_paper: 20
+        include_references: true
+      branch:
+        max_context_window: 128000
+        context_split_threshold: 0.8
+        min_papers_for_hypothesis_mode: 10
+        max_branches: 10
+      master_agent:
+        max_parallel_branches: 5
+        auto_prune_enabled: true
+        auto_split_enabled: true
+        auto_hypothesis_mode: true
+      # Phase 5: Reflection Loop
+      reflection:
+        enabled: true
+        min_papers_for_reflection: 5
+        auto_search_gaps: true
+        max_gap_searches: 3
+        coverage_threshold: 0.8
+        reflection_interval: 1
+      # Soft guardrails (suggestions, agent can override with justification)
+      paper_selection:
+        suggested_range: [5, 30]  # agent can go outside if justified
+        diversity_reminder: true   # prompt includes diversity consideration
+      branch_splitting:
+        context_warning: 0.7      # agent gets notified, not forced to split
+        max_branches_suggestion: 5  # soft limit, agent can request more
+      search:
+        initial_pool_size: 50     # fetch many, agent filters down
+        min_papers_before_split: 5  # suggestion, not requirement
+
+  # Research with Claude Haiku - fast iteration via OpenRouter
+  research-haiku:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: mock
+    overseer:
+      max_retries: 0
+    research_loop:
+      inner_loop:
+        groundedness_threshold: 0.95
+        max_papers_per_iteration: 10
+        parallel_summarization: true
+        max_summarization_concurrency: 5
+      iteration_loop:
+        max_iterations_per_branch: 5
+        citation_depth: 2
+        max_citations_per_paper: 3
+        max_references_per_paper: 3
+        include_references: false
+      branch:
+        max_context_window: 200000  # Haiku supports 200k context
+        context_split_threshold: 0.8
+        min_papers_for_hypothesis_mode: 5
+        max_branches: 5
+      master_agent:
+        max_parallel_branches: 3
+        auto_prune_enabled: true
+        auto_split_enabled: true
+        auto_hypothesis_mode: true
+      # Phase 5: Reflection Loop
+      reflection:
+        enabled: true
+        min_papers_for_reflection: 5
+        auto_search_gaps: true
+        max_gap_searches: 2
+        coverage_threshold: 0.8
+        reflection_interval: 1
+      # Soft guardrails
+      paper_selection:
+        suggested_range: [5, 20]
+        diversity_reminder: true
+      branch_splitting:
+        context_warning: 0.7
+        max_branches_suggestion: 3
+      search:
+        initial_pool_size: 30
+        min_papers_before_split: 5
+
+  # Research with Claude Haiku - accurate with real HaluGate via OpenRouter
+  research-haiku-accurate:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: local
+      use_sentinel: true
+      device: cpu
+    overseer:
+      max_retries: 2
+      groundedness_threshold: 0.8
+    research_loop:
+      inner_loop:
+        groundedness_threshold: 0.95
+        max_papers_per_iteration: 20
+        parallel_summarization: true
+        max_summarization_concurrency: 5
+      iteration_loop:
+        max_iterations_per_branch: 10
+        citation_depth: 2
+        max_citations_per_paper: 10
+        max_references_per_paper: 10
+        include_references: true
+      branch:
+        max_context_window: 200000
+        context_split_threshold: 0.8
+        min_papers_for_hypothesis_mode: 10
+        max_branches: 10
+      master_agent:
+        max_parallel_branches: 5
+        auto_prune_enabled: true
+        auto_split_enabled: true
+        auto_hypothesis_mode: true
+      # Phase 5: Reflection Loop
+      reflection:
+        enabled: true
+        min_papers_for_reflection: 5
+        auto_search_gaps: true
+        max_gap_searches: 3
+        coverage_threshold: 0.8
+        reflection_interval: 1
+      # Soft guardrails
+      paper_selection:
+        suggested_range: [5, 30]
+        diversity_reminder: true
+      branch_splitting:
+        context_warning: 0.7
+        max_branches_suggestion: 5
+      search:
+        initial_pool_size: 50
+        min_papers_before_split: 5
+
+  # Research with remote HaluGate - GPU-accelerated validation
+  # Start HaluGate on Lambda Labs A10 ($0.75/hr) or similar GPU cloud
+  research-remote:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: http
+      url: ${HALUGATE_URL}
+    overseer:
+      max_retries: 2
+      groundedness_threshold: 0.8
+    research_loop:
+      inner_loop:
+        groundedness_threshold: 0.95
+        max_papers_per_iteration: 20
+        parallel_summarization: true
+        max_summarization_concurrency: 5
+      iteration_loop:
+        max_iterations_per_branch: 10
+        citation_depth: 2
+        max_citations_per_paper: 20
+        max_references_per_paper: 20
+        include_references: true
+      branch:
+        max_context_window: 128000
+        context_split_threshold: 0.8
+        min_papers_for_hypothesis_mode: 10
+        max_branches: 10
+      master_agent:
+        max_parallel_branches: 5
+        auto_prune_enabled: true
+        auto_split_enabled: true
+        auto_hypothesis_mode: true
+      # Phase 5: Reflection Loop
+      reflection:
+        enabled: true
+        min_papers_for_reflection: 5
+        auto_search_gaps: true
+        max_gap_searches: 3
+        coverage_threshold: 0.8
+        reflection_interval: 1
+      # Soft guardrails
+      paper_selection:
+        suggested_range: [5, 30]
+        diversity_reminder: true
+      branch_splitting:
+        context_warning: 0.7
+        max_branches_suggestion: 5
+      search:
+        initial_pool_size: 50
+        min_papers_before_split: 5
+
+  # Research Loop production profile - high quality with Claude
+  research-prod:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: local
+      use_sentinel: true
+      device: cpu
+    overseer:
+      max_retries: 2
+      groundedness_threshold: 0.85
+    research_loop:
+      inner_loop:
+        groundedness_threshold: 0.95
+        max_papers_per_iteration: 20
+        parallel_summarization: true
+        max_summarization_concurrency: 5
+      iteration_loop:
+        max_iterations_per_branch: 15
+        citation_depth: 3
+        max_citations_per_paper: 30
+        max_references_per_paper: 30
+        include_references: true
+      branch:
+        max_context_window: 200000
+        context_split_threshold: 0.8
+        min_papers_for_hypothesis_mode: 10
+        max_branches: 15
+      master_agent:
+        max_parallel_branches: 5
+        auto_prune_enabled: true
+        auto_split_enabled: true
+        auto_hypothesis_mode: true
+      # Phase 5: Reflection Loop
+      reflection:
+        enabled: true
+        min_papers_for_reflection: 5
+        auto_search_gaps: true
+        max_gap_searches: 5
+        coverage_threshold: 0.85
+        reflection_interval: 1
+      # Soft guardrails (production settings)
+      paper_selection:
+        suggested_range: [10, 50]  # higher limits for thorough research
+        diversity_reminder: true
+      branch_splitting:
+        context_warning: 0.7
+        max_branches_suggestion: 10
+      search:
+        initial_pool_size: 100    # larger pool for production
+        min_papers_before_split: 10
+    paper_sources:
+      providers: ["semantic_scholar"]
+      strategy: single
+
+  # arXiv only - for preprint-focused research
+  research-arxiv:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: mock
+    overseer:
+      max_retries: 0
+    research_loop:
+      inner_loop:
+        groundedness_threshold: 0.95
+        max_papers_per_iteration: 10
+        parallel_summarization: true
+        max_summarization_concurrency: 3
+      iteration_loop:
+        max_iterations_per_branch: 5
+        citation_depth: 2
+        max_citations_per_paper: 5
+        max_references_per_paper: 5
+        include_references: true
+      branch:
+        max_context_window: 200000
+        context_split_threshold: 0.8
+        min_papers_for_hypothesis_mode: 5
+        max_branches: 5
+      master_agent:
+        max_parallel_branches: 3
+        auto_prune_enabled: true
+        auto_split_enabled: true
+        auto_hypothesis_mode: true
+      reflection:
+        enabled: true
+        min_papers_for_reflection: 5
+        auto_search_gaps: true
+        max_gap_searches: 2
+        coverage_threshold: 0.8
+        reflection_interval: 1
+      paper_selection:
+        suggested_range: [5, 20]
+        diversity_reminder: true
+      branch_splitting:
+        context_warning: 0.7
+        max_branches_suggestion: 3
+      search:
+        initial_pool_size: 30
+        min_papers_before_split: 5
+    paper_sources:
+      providers: ["arxiv"]
+      strategy: single
+      arxiv_categories: null
+      arxiv_rate_limit: 3.0
+
+  # Combined - search both Semantic Scholar and arXiv, deduplicate results
+  research-combined:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: mock
+    overseer:
+      max_retries: 0
+    research_loop:
+      inner_loop:
+        groundedness_threshold: 0.95
+        max_papers_per_iteration: 15
+        parallel_summarization: true
+        max_summarization_concurrency: 5
+      iteration_loop:
+        max_iterations_per_branch: 7
+        citation_depth: 2
+        max_citations_per_paper: 5
+        max_references_per_paper: 5
+        include_references: true
+      branch:
+        max_context_window: 200000
+        context_split_threshold: 0.8
+        min_papers_for_hypothesis_mode: 8
+        max_branches: 7
+      master_agent:
+        max_parallel_branches: 4
+        auto_prune_enabled: true
+        auto_split_enabled: true
+        auto_hypothesis_mode: true
+      reflection:
+        enabled: true
+        min_papers_for_reflection: 5
+        auto_search_gaps: true
+        max_gap_searches: 3
+        coverage_threshold: 0.8
+        reflection_interval: 1
+      paper_selection:
+        suggested_range: [5, 25]
+        diversity_reminder: true
+      branch_splitting:
+        context_warning: 0.7
+        max_branches_suggestion: 4
+      search:
+        initial_pool_size: 40
+        min_papers_before_split: 5
+    paper_sources:
+      providers: ["semantic_scholar", "arxiv"]
+      strategy: parallel
+      deduplication: true
+      prefer_provider: semantic_scholar  # SS has citation counts
+      arxiv_categories: ["cs.LG", "cs.AI", "cs.CL"]
+      arxiv_rate_limit: 3.0
+
+  # Fallback mode - try Semantic Scholar first, fall back to arXiv
+  research-fallback:
+    summarizer:
+      backend: openrouter
+      model: ${OPENROUTER_MODEL}
+      api_key: ${OPENROUTER_API_KEY}
+      base_url: ${OPENROUTER_BASE_URL}
+    halugate:
+      backend: mock
+    overseer:
+      max_retries: 0
+    research_loop:
+      inner_loop:
+        groundedness_threshold: 0.95
+        max_papers_per_iteration: 10
+        parallel_summarization: true
+        max_summarization_concurrency: 3
+      iteration_loop:
+        max_iterations_per_branch: 5
+        citation_depth: 2
+        max_citations_per_paper: 5
+        max_references_per_paper: 5
+        include_references: true
+      branch:
+        max_context_window: 200000
+        context_split_threshold: 0.8
+        min_papers_for_hypothesis_mode: 5
+        max_branches: 5
+      master_agent:
+        max_parallel_branches: 3
+        auto_prune_enabled: true
+        auto_split_enabled: true
+        auto_hypothesis_mode: true
+      reflection:
+        enabled: true
+        min_papers_for_reflection: 5
+        auto_search_gaps: true
+        max_gap_searches: 2
+        coverage_threshold: 0.8
+        reflection_interval: 1
+      paper_selection:
+        suggested_range: [5, 20]
+        diversity_reminder: true
+      branch_splitting:
+        context_warning: 0.7
+        max_branches_suggestion: 3
+      search:
+        initial_pool_size: 30
+        min_papers_before_split: 5
+    paper_sources:
+      providers: ["semantic_scholar", "arxiv"]
+      strategy: fallback
+      deduplication: false
+      arxiv_categories: ["cs.LG", "cs.AI", "cs.CL", "cs.CV"]
+      arxiv_rate_limit: 3.0

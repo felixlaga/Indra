@@ -16,6 +16,7 @@ def test_initial_migration_defines_required_tables():
         "projects",
         "research_sessions",
         "branches",
+        "runtime_loop_bindings",
         "papers",
         "paper_authors",
         "session_papers",
@@ -44,6 +45,7 @@ def test_initial_migration_defines_required_indexes():
         "idx_research_sessions_project_id",
         "idx_branches_session_id",
         "idx_branches_parent_branch_id",
+        "idx_runtime_loop_bindings_root_branch_id",
         "idx_papers_canonical_key",
         "idx_papers_doi",
         "idx_papers_arxiv_id",
@@ -108,6 +110,7 @@ def test_initial_migration_aligns_phase1_contract_columns():
         "generation_parameters jsonb NOT NULL DEFAULT '{}'::jsonb",
         "generated_at timestamptz",
         "CREATE TABLE manual_claim_reviews",
+        "CREATE TABLE runtime_loop_bindings",
     ]
 
     for fragment in required_fragments:

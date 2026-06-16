@@ -125,6 +125,7 @@ Optional:
 ```bash
 MODEL_PROFILE=research-fast
 ERLA_REPOSITORY_BACKEND=memory
+ERLA_DATABASE_URL=postgresql://user:password@localhost:5432/erla
 SEMANTIC_SCHOLAR_API_KEY=...
 HALUGATE_URL=http://localhost:8000
 HALUGATE_DEVICE=cpu
@@ -174,7 +175,7 @@ erla fetch arxiv:2301.00001 --with-text
 
 ## Product API skeleton
 
-The product API is an early boundary for projects, sessions, branches, papers, claims, claim evidence, events, and run controls. It depends on a `ProductRepository` contract and creates the configured backend through `ERLA_REPOSITORY_BACKEND`, which defaults to `memory`. The only implemented backend is currently in-memory and must not be treated as durable product state.
+The product API is an early boundary for projects, sessions, branches, papers, claims, claim evidence, events, and run controls. It depends on a `ProductRepository` contract and creates the configured backend through `ERLA_REPOSITORY_BACKEND`, which defaults to `memory`. A Postgres-backed repository now exists behind `ERLA_REPOSITORY_BACKEND=postgres` and `ERLA_DATABASE_URL`, but workers and production deployment are still deferred.
 
 Session creation now creates a lightweight runtime `LoopState` and root branch through the existing research-core orchestration models. This binds product sessions to the current research loop shape, but it does not run long research work in API handlers and does not replace the future worker queue or durable repository.
 

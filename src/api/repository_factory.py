@@ -7,6 +7,7 @@ from os import getenv
 from .repository import InMemoryRepository, ProductRepository, RepositoryError
 
 REPOSITORY_BACKEND_ENV = "ERLA_REPOSITORY_BACKEND"
+DATABASE_URL_ENV = "ERLA_DATABASE_URL"
 
 
 class RepositoryConfigurationError(RepositoryError):
@@ -21,11 +22,17 @@ def create_repository(backend: str | None = None) -> ProductRepository:
         return InMemoryRepository()
 
     if selected in {"postgres", "postgresql"}:
-        raise RepositoryConfigurationError(
-            "Postgres repository is not implemented yet; use "
-            f"{REPOSITORY_BACKEND_ENV}=memory until the durable adapter exists."
-        )
+        database_url = getenv(DATABASE_URL_ENV, "").strip()
+        if not database_url:
+            raise RepositoryConfigurationError(
+                f"{DATABASE_URL_ENV} is required when "
+                f"{REPOSITORY_BACKEND_ENV}=postgres."
+            )
+        from .postgres_repository import PostgresRepository
+
+        return PostgresRepository(database_url)
 
     raise RepositoryConfigurationError(
-        f"Unsupported repository backend '{selected}'. Supported backends: memory."
+        f"Unsupported repository backend '{selected}'. Supported backends: "
+        "memory, postgres."
     )

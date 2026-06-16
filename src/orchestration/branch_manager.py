@@ -186,6 +186,8 @@ class BranchManager:
             branch: Branch to update
             status: New status
         """
+        from .models import BranchStatus
+
         old_status = branch.status
         branch.status = status
         if status == BranchStatus.RUNNING:

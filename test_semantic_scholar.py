@@ -64,6 +64,9 @@ async def test_with_adapter(adapter: PaperSearchProvider):
             print()
 
 
+test_with_adapter.__test__ = False
+
+
 async def main():
     # Check for API key
     api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY")

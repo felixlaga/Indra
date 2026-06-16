@@ -18,6 +18,7 @@ dependencies = [
     "uvicorn>=0.34",  # ASGI server
     "arxiv>=2.1",  # arXiv API wrapper
     "typer>=0.9",  # CLI framework
+    "psycopg[binary]>=3.2",  # Postgres durable repository backend
 ]
 
 [dependency-groups]

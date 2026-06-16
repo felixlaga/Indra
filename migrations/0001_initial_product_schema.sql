@@ -75,6 +75,15 @@ CREATE TABLE branches (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE runtime_loop_bindings (
+  session_id uuid PRIMARY KEY REFERENCES research_sessions(id) ON DELETE CASCADE,
+  loop_id text NOT NULL,
+  loop_number integer NOT NULL CHECK (loop_number >= 1),
+  root_branch_id uuid NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE papers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   canonical_key text UNIQUE,
@@ -465,6 +474,7 @@ CREATE TABLE exports (
 CREATE INDEX idx_research_sessions_project_id ON research_sessions(project_id);
 CREATE INDEX idx_branches_session_id ON branches(session_id);
 CREATE INDEX idx_branches_parent_branch_id ON branches(parent_branch_id);
+CREATE INDEX idx_runtime_loop_bindings_root_branch_id ON runtime_loop_bindings(root_branch_id);
 CREATE INDEX idx_papers_canonical_key ON papers(canonical_key);
 CREATE INDEX idx_papers_doi ON papers(doi);
 CREATE INDEX idx_papers_arxiv_id ON papers(arxiv_id);
@@ -511,6 +521,10 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER trg_branches_updated_at
 BEFORE UPDATE ON branches
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_runtime_loop_bindings_updated_at
+BEFORE UPDATE ON runtime_loop_bindings
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER trg_papers_updated_at

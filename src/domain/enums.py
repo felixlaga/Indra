@@ -110,6 +110,24 @@ class PaperDiscoveryMethod(StrEnum):
     AGENT_RECOMMENDATION = "agent_recommendation"
 
 
+class JobType(StrEnum):
+    RESEARCH_SESSION = "research_session"
+    BRANCH_CONTINUE = "branch_continue"
+    CLAIM_EXTRACTION = "claim_extraction"
+    CLAIM_VALIDATION = "claim_validation"
+    EXPORT = "export"
+
+
+class JobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    PAUSED = "paused"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
+
+
 class ValidationTargetType(StrEnum):
     SUMMARY = "summary"
     CLAIM = "claim"

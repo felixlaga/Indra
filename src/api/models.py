@@ -15,6 +15,8 @@ from ..domain.enums import (
     EventSeverity,
     EvidenceRelation,
     EvidenceSourceType,
+    JobStatus,
+    JobType,
     PaperDiscoveryMethod,
     SessionStatus,
     SummaryType,
@@ -318,12 +320,63 @@ class RuntimeLoopBinding(BaseModel):
     updated_at: datetime
 
 
+class JobCreate(BaseModel):
+    """Durable background job enqueue contract."""
+
+    session_id: str
+    branch_id: str | None = None
+    job_type: JobType
+    payload: dict[str, Any] = Field(default_factory=dict)
+    priority: int = 0
+    max_attempts: int = Field(default=3, ge=1, le=20)
+    timeout_seconds: int = Field(default=1800, ge=1, le=86_400)
+    run_at: datetime | None = None
+
+
+class Job(JobCreate):
+    """Durable background job state exposed to API and workers."""
+
+    id: str
+    status: JobStatus = JobStatus.QUEUED
+    run_at: datetime
+    result: dict[str, Any] = Field(default_factory=dict)
+    attempts: int = 0
+    locked_by: str | None = None
+    locked_at: datetime | None = None
+    last_error: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+
+
+class JobLeaseRequest(BaseModel):
+    """Worker request to lease the next runnable job."""
+
+    worker_id: str = Field(min_length=1)
+    job_types: list[JobType] = Field(default_factory=list)
+
+
+class JobCompletionRequest(BaseModel):
+    """Worker payload for completing a leased job."""
+
+    result: dict[str, Any] = Field(default_factory=dict)
+
+
+class JobFailureRequest(BaseModel):
+    """Worker payload for failing or retrying a leased job."""
+
+    error: str = Field(min_length=1)
+    retryable: bool = True
+    retry_delay_seconds: int = Field(default=60, ge=0, le=86_400)
+
+
 class SessionSnapshot(BaseModel):
     """A reconstructable session view for dashboard clients."""
 
     session: ResearchSession
     runtime_loop: RuntimeLoopBinding | None = None
     branches: list[Branch] = Field(default_factory=list)
+    jobs: list[Job] = Field(default_factory=list)
     papers: list[SessionPaperView] = Field(default_factory=list)
     summaries: list[Summary] = Field(default_factory=list)
     claims: list[Claim] = Field(default_factory=list)

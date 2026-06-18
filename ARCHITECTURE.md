@@ -113,7 +113,7 @@ Rules:
 
 Add a product API using FastAPI.
 
-An initial skeleton currently exists under `src/api/`. It exposes project, session, branch, paper, claim extraction, supplied-evidence claim validation, event, run-control, and server-sent event stream endpoints through a `ProductRepository` contract. A repository factory selects the backend with `ERLA_REPOSITORY_BACKEND`; the only implemented backend is a process-local in-memory repository. Session creation creates a lightweight runtime `LoopState` and root branch via the existing orchestration models, and exposes that binding through `GET /sessions/{session_id}/loop`. The stream replays current events and publishes new process-local events. Claim extraction currently uses a deterministic scaffold and marks claims as `needs_review` or `speculative`; claim validation accepts explicit evidence passages and applies deterministic relation rules, but it does not retrieve evidence, call a production verifier, or persist evidence durably. This skeleton establishes the API and persistence boundaries only; it does not provide durable state, auth, workers, production-grade realtime infrastructure, or real research execution.
+An initial skeleton currently exists under `src/api/`. It exposes project, session, branch, paper, claim extraction, supplied-evidence claim validation, event, run-control, job, and server-sent event stream endpoints through a `ProductRepository` contract. A repository factory selects the backend with `ERLA_REPOSITORY_BACKEND`; `memory` remains the default backend, and a Postgres-backed repository is available with `ERLA_REPOSITORY_BACKEND=postgres` plus `ERLA_DATABASE_URL`. Session creation creates a lightweight runtime `LoopState` and root branch via the existing orchestration models, and exposes that binding through `GET /sessions/{session_id}/loop`. Run controls enqueue durable `jobs` records for worker execution instead of running long work inline. The stream replays current events and publishes new process-local events. Claim extraction currently uses a deterministic scaffold and marks claims as `needs_review` or `speculative`; claim validation accepts explicit evidence passages and applies deterministic relation rules. The Postgres repository persists evidence/events durably, but it does not yet retrieve evidence automatically or call a production verifier. This skeleton establishes the API, durable repository, and worker-job boundaries; it does not provide auth, production-grade realtime infrastructure, or real research execution.
 
 Responsibilities:
 
@@ -173,6 +173,7 @@ Responsibilities:
 
 Acceptable initial job queues:
 
+- Current Phase 3 foundation: Postgres-backed `jobs` table plus `src/jobs/worker.py` lease/complete/fail adapter.
 - Dramatiq + Redis.
 - RQ + Redis.
 - Celery + Redis.
@@ -227,7 +228,7 @@ Use Postgres as the durable product database.
 
 Use pgvector for embeddings when semantic retrieval is added.
 
-An initial schema migration exists at `migrations/0001_initial_product_schema.sql`. It creates the product tables and indexes. A `ProductRepository` contract and backend factory now exist in `src/api`, but no Postgres repository or migration runner is wired yet.
+An initial schema migration exists at `migrations/0001_initial_product_schema.sql`. It creates the product tables, job table, and indexes. A `ProductRepository` contract, backend factory, in-memory backend, and Postgres backend now exist in `src/api`. A migration runner and deployed database are still not wired.
 
 Use object storage for:
 

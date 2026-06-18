@@ -23,6 +23,10 @@ from .models import (
     ClaimValidationRequest,
     ClaimValidationResult,
     Event,
+    Job,
+    JobCompletionRequest,
+    JobFailureRequest,
+    JobLeaseRequest,
     Paper,
     Project,
     ProjectCreate,
@@ -140,6 +144,88 @@ def get_session_loop(session_id: str, request: Request) -> RuntimeLoopBinding:
 
     try:
         return get_repository(request).get_runtime_loop_binding(session_id)
+    except RepositoryError as exc:
+        handle_repository_error(exc)
+        raise
+
+
+@router.get("/sessions/{session_id}/jobs", response_model=list[Job])
+def list_session_jobs(session_id: str, request: Request) -> list[Job]:
+    """List background jobs for a session."""
+
+    try:
+        return get_repository(request).list_jobs(session_id)
+    except RepositoryError as exc:
+        handle_repository_error(exc)
+        raise
+
+
+@router.post("/jobs/lease", response_model=Job | None)
+def lease_job(payload: JobLeaseRequest, request: Request) -> Job | None:
+    """Lease the next runnable job for a worker."""
+
+    try:
+        return get_repository(request).lease_next_job(
+            worker_id=payload.worker_id,
+            job_types=payload.job_types,
+        )
+    except RepositoryError as exc:
+        handle_repository_error(exc)
+        raise
+
+
+@router.post("/jobs/expire", response_model=list[Job])
+def expire_timed_out_jobs(request: Request) -> list[Job]:
+    """Expire timed-out running jobs."""
+
+    try:
+        return get_repository(request).expire_timed_out_jobs()
+    except RepositoryError as exc:
+        handle_repository_error(exc)
+        raise
+
+
+@router.get("/jobs/{job_id}", response_model=Job)
+def get_job(job_id: str, request: Request) -> Job:
+    """Get a background job."""
+
+    try:
+        return get_repository(request).get_job(job_id)
+    except RepositoryError as exc:
+        handle_repository_error(exc)
+        raise
+
+
+@router.post("/jobs/{job_id}/complete", response_model=Job)
+def complete_job(
+    job_id: str,
+    payload: JobCompletionRequest,
+    request: Request,
+) -> Job:
+    """Complete a leased background job."""
+
+    try:
+        return get_repository(request).complete_job(job_id, payload.result)
+    except RepositoryError as exc:
+        handle_repository_error(exc)
+        raise
+
+
+@router.post("/jobs/{job_id}/fail", response_model=Job)
+def fail_job(
+    job_id: str,
+    payload: JobFailureRequest,
+    request: Request,
+) -> Job:
+    """Fail or retry a leased background job."""
+
+    try:
+        return get_repository(request).fail_job(
+            job_id,
+            payload.error,
+            retryable=payload.retryable,
+            retry_delay_seconds=payload.retry_delay_seconds,
+        )
     except RepositoryError as exc:
         handle_repository_error(exc)
         raise

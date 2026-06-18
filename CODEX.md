@@ -30,12 +30,13 @@ This repo currently has:
 - Python package under `src/`.
 - Typer CLI in `src/cli.py`.
 - FastAPI product API skeleton in `src/api`.
-- Product API routes depend on a `ProductRepository` contract, with backend selection through `ERLA_REPOSITORY_BACKEND`; only the `memory` backend is implemented.
+- Product API routes depend on a `ProductRepository` contract, with backend selection through `ERLA_REPOSITORY_BACKEND`; `memory` is the default backend and `postgres` is available with `ERLA_DATABASE_URL`.
 - Session creation is wired to a lightweight runtime `LoopState` and root branch through `src/api/research_loop.py`.
 - Process-local server-sent event streaming is available at `GET /sessions/{session_id}/events/stream`.
+- Phase 3 background job contracts exist: run controls create durable jobs, worker-facing lease/complete/fail endpoints are exposed, and `src/jobs/worker.py` provides an in-process worker adapter.
 - Deterministic claim extraction lives in `src/claims` and is exposed by `POST /sessions/{session_id}/claims/extract`.
 - Deterministic supplied-evidence claim validation lives in `src/claims` and is exposed by `POST /claims/{claim_id}/validate` plus `GET /claims/{claim_id}/evidence`.
-- Initial Postgres product schema migration in `migrations/`.
+- Initial Postgres product schema migration in `migrations/`, including job persistence.
 - Prototype dashboard shell in `viewer/` with selectable branch and paper inspectors.
 - Config profiles in `src/config/models.yaml`.
 - Semantic Scholar provider.
@@ -48,7 +49,7 @@ This repo currently has:
 - Prototype Convex schema/functions under `convex/`.
 - Prototype Vite/React viewer under `viewer/`.
 
-Do not assume there is already a production dashboard, running database, job queue, Postgres-backed repository implementation, automated evidence retrieval, production-grade claim verifier, durable evidence ledger, production-grade event stream, or durable API layer. Treat `src/api`, `migrations/`, `viewer/`, and `convex/` as prototype/skeleton/foundation surfaces unless the source-of-truth docs say otherwise.
+Do not assume there is already a production dashboard, running database, Redis/Celery-style external job queue, automated evidence retrieval, production-grade claim verifier, production-grade event stream, or durable API deployment. Treat `src/api`, `migrations/`, `src/jobs`, `viewer/`, and `convex/` as prototype/skeleton/foundation surfaces unless the source-of-truth docs say otherwise.
 
 ## 4. Core product rule
 
@@ -128,7 +129,7 @@ Default order follows `ROADMAP.md`:
 9. Add claim extraction.
 10. Add claim validation.
 
-The initial scaffold for the immediate priority list now exists, and the first durable-state boundary is the API repository contract/factory. Follow the roadmap phases for the next production work: implement a Postgres-backed repository, workers, dashboard hardening, automated evidence retrieval, and production claim verification.
+The initial scaffold for the immediate priority list now exists, including the API repository contract/factory, Postgres repository, and durable job contract. Follow the roadmap phases for the next production work: worker execution against the research core, dashboard hardening, automated evidence retrieval, and production claim verification.
 
 Do not skip durable state and build only UI mockups.
 

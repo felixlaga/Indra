@@ -85,31 +85,45 @@ def test_run_controls_update_session_and_branch_state():
     assert start_response.status_code == 200
     assert start_response.json()["status"] == "running"
 
+    jobs_response = client.get(f"/sessions/{session['id']}/jobs")
+    assert jobs_response.status_code == 200
+    jobs = jobs_response.json()
+    assert len(jobs) == 1
+    assert jobs[0]["job_type"] == "research_session"
+    assert jobs[0]["status"] == "queued"
+
     branches = client.get(f"/sessions/{session['id']}/branches").json()
     assert branches[0]["status"] == "running"
 
     pause_response = client.post(f"/sessions/{session['id']}/pause")
     assert pause_response.status_code == 200
     assert pause_response.json()["status"] == "paused"
+    assert client.get(f"/jobs/{jobs[0]['id']}").json()["status"] == "paused"
 
     resume_response = client.post(f"/sessions/{session['id']}/resume")
     assert resume_response.status_code == 200
     assert resume_response.json()["status"] == "running"
+    assert client.get(f"/jobs/{jobs[0]['id']}").json()["status"] == "queued"
 
     cancel_response = client.post(f"/sessions/{session['id']}/cancel")
     assert cancel_response.status_code == 200
     assert cancel_response.json()["status"] == "cancelled"
+    assert client.get(f"/jobs/{jobs[0]['id']}").json()["status"] == "cancelled"
 
     invalid_pause_response = client.post(f"/sessions/{session['id']}/pause")
     assert invalid_pause_response.status_code == 409
 
     events = client.get(f"/sessions/{session['id']}/events").json()
     event_types = [event["event_type"] for event in events]
-    assert event_types[-4:] == [
+    assert event_types[-8:] == [
         "session_started",
+        "job_queued",
         "session_paused",
+        "job_paused",
         "session_resumed",
+        "job_resumed",
         "session_cancelled",
+        "job_cancelled",
     ]
     loop = client.get(f"/sessions/{session['id']}/loop").json()
     started_event = next(
@@ -117,6 +131,63 @@ def test_run_controls_update_session_and_branch_state():
     )
     assert started_event["payload"]["loop_id"] == loop["loop_id"]
     assert started_event["payload"]["root_branch_id"] == loop["root_branch_id"]
+
+
+def test_background_job_contract_lease_retry_and_complete():
+    client = make_client()
+    session = client.post(
+        "/sessions",
+        json={"initial_query": "background job lifecycle"},
+    ).json()
+    client.post(f"/sessions/{session['id']}/start")
+
+    leased_response = client.post("/jobs/lease", json={"worker_id": "worker-1"})
+    assert leased_response.status_code == 200
+    leased = leased_response.json()
+    assert leased["status"] == "running"
+    assert leased["attempts"] == 1
+    assert leased["locked_by"] == "worker-1"
+
+    retry_response = client.post(
+        f"/jobs/{leased['id']}/fail",
+        json={
+            "error": "provider timeout",
+            "retryable": True,
+            "retry_delay_seconds": 0,
+        },
+    )
+    assert retry_response.status_code == 200
+    retry_job = retry_response.json()
+    assert retry_job["status"] == "queued"
+    assert retry_job["attempts"] == 1
+    assert retry_job["last_error"] == "provider timeout"
+
+    leased_again = client.post(
+        "/jobs/lease",
+        json={"worker_id": "worker-2", "job_types": ["research_session"]},
+    ).json()
+    assert leased_again["id"] == leased["id"]
+    assert leased_again["attempts"] == 2
+    assert leased_again["locked_by"] == "worker-2"
+
+    complete_response = client.post(
+        f"/jobs/{leased['id']}/complete",
+        json={"result": {"papers_found": 0}},
+    )
+    assert complete_response.status_code == 200
+    completed = complete_response.json()
+    assert completed["status"] == "succeeded"
+    assert completed["result"] == {"papers_found": 0}
+
+    empty_lease_response = client.post("/jobs/lease", json={"worker_id": "worker-3"})
+    assert empty_lease_response.status_code == 200
+    assert empty_lease_response.json() is None
+
+    events = client.get(f"/sessions/{session['id']}/events").json()
+    event_types = [event["event_type"] for event in events]
+    assert "job_started" in event_types
+    assert "job_retry_scheduled" in event_types
+    assert "job_completed" in event_types
 
 
 def test_event_stream_subscription_replays_and_publishes_events():
@@ -140,6 +211,8 @@ def test_event_stream_subscription_replays_and_publishes_events():
 
         published_event = subscription.queue.get_nowait()
         assert published_event.event_type == "session_started"
+        queued_event = subscription.queue.get_nowait()
+        assert queued_event.event_type == "job_queued"
 
         frame = format_sse_event(published_event)
         assert f"id: {published_event.id}" in frame

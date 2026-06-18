@@ -27,6 +27,9 @@ from .models import (
     ClaimValidationRequest,
     ClaimValidationResult,
     Event,
+    Job,
+    JobStatus,
+    JobType,
     Paper,
     Project,
     ProjectCreate,
@@ -257,6 +260,7 @@ class PostgresRepository:
                 session=session,
                 runtime_loop=self._get_runtime_loop_binding(conn, session_id),
                 branches=self._list_branches(conn, session_id),
+                jobs=self._list_jobs(conn, session_id),
                 papers=self._list_papers(conn, session_id),
                 summaries=self._list_summaries(conn, session_id),
                 claims=self._list_claims(conn, session_id),
@@ -268,6 +272,155 @@ class PostgresRepository:
         with self._connect() as conn:
             self._get_session(conn, session_id)
             return self._get_runtime_loop_binding(conn, session_id)
+
+    def list_jobs(self, session_id: str) -> list[Job]:
+        with self._connect() as conn:
+            self._get_session(conn, session_id)
+            return self._list_jobs(conn, session_id)
+
+    def get_job(self, job_id: str) -> Job:
+        with self._connect() as conn:
+            return self._get_job(conn, job_id)
+
+    def lease_next_job(
+        self,
+        worker_id: str,
+        job_types: list[JobType] | None = None,
+    ) -> Job | None:
+        pending_events: list[InsertedEvent] = []
+        with self._connect() as conn:
+            pending_events.extend(self._expire_timed_out_jobs(conn))
+            requested_types = [job_type.value for job_type in job_types or []]
+            if requested_types:
+                row = self._fetch_optional(
+                    conn,
+                    """
+                    SELECT * FROM jobs
+                    WHERE status = 'queued'
+                      AND run_at <= now()
+                      AND job_type = ANY(%s)
+                    ORDER BY priority DESC, run_at, created_at
+                    LIMIT 1
+                    FOR UPDATE SKIP LOCKED
+                    """,
+                    (requested_types,),
+                )
+            else:
+                row = self._fetch_optional(
+                    conn,
+                    """
+                    SELECT * FROM jobs
+                    WHERE status = 'queued'
+                      AND run_at <= now()
+                    ORDER BY priority DESC, run_at, created_at
+                    LIMIT 1
+                    FOR UPDATE SKIP LOCKED
+                    """,
+                )
+            if row is None:
+                job = None
+            else:
+                row = self._fetch_one(
+                    conn,
+                    """
+                    UPDATE jobs
+                    SET status = 'running',
+                        attempts = attempts + 1,
+                        locked_by = %s,
+                        locked_at = now(),
+                        last_error = NULL
+                    WHERE id = %s
+                    RETURNING *
+                    """,
+                    (worker_id, row["id"]),
+                )
+                job = _job_from_row(row)
+                pending_events.append(
+                    self._insert_event(
+                        conn,
+                        session_id=job.session_id,
+                        branch_id=job.branch_id,
+                        event_type="job_started",
+                        payload={
+                            "job_id": job.id,
+                            "job_type": job.job_type.value,
+                            "attempt": job.attempts,
+                            "worker_id": worker_id,
+                        },
+                    )
+                )
+
+        self._publish_inserted_events(pending_events)
+        return job
+
+    def complete_job(self, job_id: str, result: dict | None = None) -> Job:
+        pending_events: list[InsertedEvent] = []
+        with self._connect() as conn:
+            job = self._get_job(conn, job_id)
+            if job.status != JobStatus.RUNNING:
+                raise ConflictError("Only running jobs can be completed")
+            row = self._fetch_one(
+                conn,
+                """
+                UPDATE jobs
+                SET status = 'succeeded',
+                    result = %s,
+                    locked_by = NULL,
+                    locked_at = NULL,
+                    completed_at = now()
+                WHERE id = %s
+                RETURNING *
+                """,
+                (_jsonb(result or {}), job_id),
+            )
+            job = _job_from_row(row)
+            pending_events.append(
+                self._insert_event(
+                    conn,
+                    session_id=job.session_id,
+                    branch_id=job.branch_id,
+                    event_type="job_completed",
+                    payload={
+                        "job_id": job.id,
+                        "job_type": job.job_type.value,
+                        "attempts": job.attempts,
+                    },
+                )
+            )
+        self._publish_inserted_events(pending_events)
+        return job
+
+    def fail_job(
+        self,
+        job_id: str,
+        error: str,
+        retryable: bool = True,
+        retry_delay_seconds: int = 60,
+    ) -> Job:
+        pending_events: list[InsertedEvent] = []
+        with self._connect() as conn:
+            job = self._get_job(conn, job_id)
+            if job.status != JobStatus.RUNNING:
+                raise ConflictError("Only running jobs can fail")
+            job, event = self._fail_job(
+                conn,
+                job,
+                error=error,
+                retryable=retryable,
+                retry_delay_seconds=retry_delay_seconds,
+            )
+            pending_events.append(event)
+        self._publish_inserted_events(pending_events)
+        return job
+
+    def expire_timed_out_jobs(self) -> list[Job]:
+        pending_events: list[InsertedEvent] = []
+        with self._connect() as conn:
+            pending_events.extend(self._expire_timed_out_jobs(conn))
+            expired = [inserted.event.payload["job_id"] for inserted in pending_events]
+            jobs = [self._get_job(conn, job_id) for job_id in expired]
+        self._publish_inserted_events(pending_events)
+        return jobs
 
     def set_session_status(
         self,
@@ -345,6 +498,24 @@ class PostgresRepository:
                     payload=payload,
                 )
             )
+            if event_type == "session_started":
+                _, event = self._insert_job(
+                    conn,
+                    session_id=session.id,
+                    branch_id=payload.get("root_branch_id"),
+                    job_type=JobType.RESEARCH_SESSION,
+                    payload={
+                        "initial_query": session.initial_query,
+                        **payload,
+                    },
+                )
+                pending_events.append(event)
+            elif event_type == "session_paused":
+                pending_events.extend(self._pause_session_jobs(conn, session.id))
+            elif event_type == "session_resumed":
+                pending_events.extend(self._resume_session_jobs(conn, session.id))
+            elif event_type == "session_cancelled":
+                pending_events.extend(self._cancel_session_jobs(conn, session.id))
 
         self._publish_inserted_events(pending_events)
         return session
@@ -383,6 +554,14 @@ class PostgresRepository:
                     payload={"query": branch.query},
                 )
             )
+            _, event = self._insert_job(
+                conn,
+                session_id=branch.session_id,
+                branch_id=branch.id,
+                job_type=JobType.BRANCH_CONTINUE,
+                payload={"query": branch.query},
+            )
+            pending_events.append(event)
         self._publish_inserted_events(pending_events)
         return branch
 
@@ -801,6 +980,317 @@ class PostgresRepository:
         )
         return [_branch_from_row(row) for row in rows]
 
+    def _get_job(self, conn: Any, job_id: str) -> Job:
+        row = self._fetch_optional(conn, "SELECT * FROM jobs WHERE id = %s", (job_id,))
+        if row is None:
+            raise NotFoundError("Job not found")
+        return _job_from_row(row)
+
+    def _list_jobs(self, conn: Any, session_id: str) -> list[Job]:
+        rows = self._fetch_all(
+            conn,
+            """
+            SELECT * FROM jobs
+            WHERE session_id = %s
+            ORDER BY created_at, id
+            """,
+            (session_id,),
+        )
+        return [_job_from_row(row) for row in rows]
+
+    def _insert_job(
+        self,
+        conn: Any,
+        *,
+        session_id: str,
+        branch_id: str | None,
+        job_type: JobType,
+        payload: dict,
+        priority: int = 0,
+        max_attempts: int = 3,
+        timeout_seconds: int = 1800,
+    ) -> tuple[Job, InsertedEvent]:
+        row = self._fetch_one(
+            conn,
+            """
+            INSERT INTO jobs (
+              id, session_id, branch_id, job_type, status, priority, payload,
+              max_attempts, timeout_seconds
+            )
+            VALUES (%s, %s, %s, %s, 'queued', %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                new_uuid_str(),
+                session_id,
+                branch_id,
+                job_type.value,
+                priority,
+                _jsonb(payload),
+                max_attempts,
+                timeout_seconds,
+            ),
+        )
+        job = _job_from_row(row)
+        event = self._insert_event(
+            conn,
+            session_id=session_id,
+            branch_id=branch_id,
+            event_type="job_queued",
+            payload={
+                "job_id": job.id,
+                "job_type": job.job_type.value,
+                "run_at": job.run_at.isoformat(),
+                "max_attempts": job.max_attempts,
+                "timeout_seconds": job.timeout_seconds,
+            },
+        )
+        return job, event
+
+    def _pause_session_jobs(self, conn: Any, session_id: str) -> list[InsertedEvent]:
+        rows = self._fetch_all(
+            conn,
+            """
+            UPDATE jobs
+            SET status = 'paused',
+                locked_by = NULL,
+                locked_at = NULL
+            WHERE session_id = %s
+              AND status IN ('queued', 'running')
+            RETURNING *
+            """,
+            (session_id,),
+        )
+        return [
+            self._insert_event(
+                conn,
+                session_id=str(row["session_id"]),
+                branch_id=str(row["branch_id"]) if row.get("branch_id") else None,
+                event_type="job_paused",
+                payload={"job_id": str(row["id"]), "job_type": row["job_type"]},
+            )
+            for row in rows
+        ]
+
+    def _resume_session_jobs(self, conn: Any, session_id: str) -> list[InsertedEvent]:
+        rows = self._fetch_all(
+            conn,
+            """
+            UPDATE jobs
+            SET status = 'queued'
+            WHERE session_id = %s
+              AND status = 'paused'
+            RETURNING *
+            """,
+            (session_id,),
+        )
+        return [
+            self._insert_event(
+                conn,
+                session_id=str(row["session_id"]),
+                branch_id=str(row["branch_id"]) if row.get("branch_id") else None,
+                event_type="job_resumed",
+                payload={"job_id": str(row["id"]), "job_type": row["job_type"]},
+            )
+            for row in rows
+        ]
+
+    def _cancel_session_jobs(self, conn: Any, session_id: str) -> list[InsertedEvent]:
+        rows = self._fetch_all(
+            conn,
+            """
+            UPDATE jobs
+            SET status = 'cancelled',
+                locked_by = NULL,
+                locked_at = NULL,
+                completed_at = now()
+            WHERE session_id = %s
+              AND status IN ('queued', 'running', 'paused')
+            RETURNING *
+            """,
+            (session_id,),
+        )
+        return [
+            self._insert_event(
+                conn,
+                session_id=str(row["session_id"]),
+                branch_id=str(row["branch_id"]) if row.get("branch_id") else None,
+                event_type="job_cancelled",
+                payload={"job_id": str(row["id"]), "job_type": row["job_type"]},
+            )
+            for row in rows
+        ]
+
+    def _fail_job(
+        self,
+        conn: Any,
+        job: Job,
+        *,
+        error: str,
+        retryable: bool,
+        retry_delay_seconds: int,
+    ) -> tuple[Job, InsertedEvent]:
+        if retryable and job.attempts < job.max_attempts:
+            row = self._fetch_one(
+                conn,
+                """
+                UPDATE jobs
+                SET status = 'queued',
+                    locked_by = NULL,
+                    locked_at = NULL,
+                    last_error = %s,
+                    run_at = now() + (%s * interval '1 second')
+                WHERE id = %s
+                RETURNING *
+                """,
+                (error, retry_delay_seconds, job.id),
+            )
+            job = _job_from_row(row)
+            event = self._insert_event(
+                conn,
+                session_id=job.session_id,
+                branch_id=job.branch_id,
+                event_type="job_retry_scheduled",
+                payload={
+                    "job_id": job.id,
+                    "job_type": job.job_type.value,
+                    "attempts": job.attempts,
+                    "max_attempts": job.max_attempts,
+                    "error": error,
+                    "run_at": job.run_at.isoformat(),
+                },
+                severity="warning",
+            )
+            return job, event
+
+        row = self._fetch_one(
+            conn,
+            """
+            UPDATE jobs
+            SET status = 'failed',
+                locked_by = NULL,
+                locked_at = NULL,
+                last_error = %s,
+                completed_at = now()
+            WHERE id = %s
+            RETURNING *
+            """,
+            (error, job.id),
+        )
+        job = _job_from_row(row)
+        self._mark_job_target_failed(conn, job, error)
+        event = self._insert_event(
+            conn,
+            session_id=job.session_id,
+            branch_id=job.branch_id,
+            event_type="job_failed",
+            payload={
+                "job_id": job.id,
+                "job_type": job.job_type.value,
+                "attempts": job.attempts,
+                "max_attempts": job.max_attempts,
+                "error": error,
+            },
+            severity="error",
+        )
+        return job, event
+
+    def _expire_timed_out_jobs(self, conn: Any) -> list[InsertedEvent]:
+        rows = self._fetch_all(
+            conn,
+            """
+            SELECT * FROM jobs
+            WHERE status = 'running'
+              AND locked_at IS NOT NULL
+              AND locked_at + (timeout_seconds * interval '1 second') < now()
+            FOR UPDATE SKIP LOCKED
+            """,
+        )
+        events: list[InsertedEvent] = []
+        for row in rows:
+            job = _job_from_row(row)
+            error = f"Job timed out after {job.timeout_seconds} seconds"
+            if job.attempts < job.max_attempts:
+                updated = self._fetch_one(
+                    conn,
+                    """
+                    UPDATE jobs
+                    SET status = 'queued',
+                        locked_by = NULL,
+                        locked_at = NULL,
+                        last_error = %s,
+                        run_at = now()
+                    WHERE id = %s
+                    RETURNING *
+                    """,
+                    (error, job.id),
+                )
+                job = _job_from_row(updated)
+                retried = True
+                severity = "warning"
+            else:
+                updated = self._fetch_one(
+                    conn,
+                    """
+                    UPDATE jobs
+                    SET status = 'timed_out',
+                        locked_by = NULL,
+                        locked_at = NULL,
+                        last_error = %s,
+                        completed_at = now()
+                    WHERE id = %s
+                    RETURNING *
+                    """,
+                    (error, job.id),
+                )
+                job = _job_from_row(updated)
+                self._mark_job_target_failed(conn, job, error)
+                retried = False
+                severity = "error"
+            events.append(
+                self._insert_event(
+                    conn,
+                    session_id=job.session_id,
+                    branch_id=job.branch_id,
+                    event_type="job_timed_out",
+                    payload={
+                        "job_id": job.id,
+                        "job_type": job.job_type.value,
+                        "attempts": job.attempts,
+                        "max_attempts": job.max_attempts,
+                        "retried": retried,
+                        "error": error,
+                    },
+                    severity=severity,
+                )
+            )
+        return events
+
+    def _mark_job_target_failed(self, conn: Any, job: Job, error: str) -> None:
+        if job.job_type == JobType.RESEARCH_SESSION:
+            self._execute(
+                conn,
+                """
+                UPDATE research_sessions
+                SET status = 'failed',
+                    failure_reason = %s,
+                    completed_at = now()
+                WHERE id = %s
+                """,
+                (error, job.session_id),
+            )
+        if job.branch_id:
+            self._execute(
+                conn,
+                """
+                UPDATE branches
+                SET status = 'failed',
+                    failure_reason = %s
+                WHERE id = %s
+                """,
+                (error, job.branch_id),
+            )
+
     def _get_paper_row(self, conn: Any, paper_id: str) -> dict:
         row = self._fetch_optional(
             conn,
@@ -1045,6 +1535,29 @@ def _runtime_loop_binding_from_row(row: dict) -> RuntimeLoopBinding:
         root_branch_id=str(row["root_branch_id"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+    )
+
+
+def _job_from_row(row: dict) -> Job:
+    return Job(
+        id=str(row["id"]),
+        session_id=str(row["session_id"]),
+        branch_id=str(row["branch_id"]) if row.get("branch_id") else None,
+        job_type=JobType(row["job_type"]),
+        status=JobStatus(row["status"]),
+        payload=dict(row.get("payload") or {}),
+        result=dict(row.get("result") or {}),
+        priority=row.get("priority") or 0,
+        attempts=row.get("attempts") or 0,
+        max_attempts=row.get("max_attempts") or 3,
+        timeout_seconds=row.get("timeout_seconds") or 1800,
+        run_at=row["run_at"],
+        locked_by=row.get("locked_by"),
+        locked_at=row.get("locked_at"),
+        last_error=row.get("last_error"),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        completed_at=row.get("completed_at"),
     )
 
 

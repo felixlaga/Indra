@@ -84,6 +84,49 @@ CREATE TABLE runtime_loop_bindings (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE jobs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id uuid NOT NULL REFERENCES research_sessions(id) ON DELETE CASCADE,
+  branch_id uuid REFERENCES branches(id) ON DELETE SET NULL,
+  job_type text NOT NULL CHECK (
+    job_type IN (
+      'research_session',
+      'branch_continue',
+      'claim_extraction',
+      'claim_validation',
+      'export'
+    )
+  ),
+  status text NOT NULL CHECK (
+    status IN (
+      'queued',
+      'running',
+      'paused',
+      'succeeded',
+      'failed',
+      'cancelled',
+      'timed_out'
+    )
+  ),
+  priority integer NOT NULL DEFAULT 0,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  result jsonb NOT NULL DEFAULT '{}'::jsonb,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts integer NOT NULL DEFAULT 3 CHECK (max_attempts > 0),
+  timeout_seconds integer NOT NULL DEFAULT 1800 CHECK (timeout_seconds > 0),
+  run_at timestamptz NOT NULL DEFAULT now(),
+  locked_by text,
+  locked_at timestamptz,
+  last_error text,
+  completed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (
+    (locked_by IS NULL AND locked_at IS NULL)
+    OR (locked_by IS NOT NULL AND locked_at IS NOT NULL)
+  )
+);
+
 CREATE TABLE papers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   canonical_key text UNIQUE,
@@ -475,6 +518,9 @@ CREATE INDEX idx_research_sessions_project_id ON research_sessions(project_id);
 CREATE INDEX idx_branches_session_id ON branches(session_id);
 CREATE INDEX idx_branches_parent_branch_id ON branches(parent_branch_id);
 CREATE INDEX idx_runtime_loop_bindings_root_branch_id ON runtime_loop_bindings(root_branch_id);
+CREATE INDEX idx_jobs_session_id ON jobs(session_id);
+CREATE INDEX idx_jobs_status_run_at ON jobs(status, run_at);
+CREATE INDEX idx_jobs_branch_id ON jobs(branch_id);
 CREATE INDEX idx_papers_canonical_key ON papers(canonical_key);
 CREATE INDEX idx_papers_doi ON papers(doi);
 CREATE INDEX idx_papers_arxiv_id ON papers(arxiv_id);
@@ -525,6 +571,10 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER trg_runtime_loop_bindings_updated_at
 BEFORE UPDATE ON runtime_loop_bindings
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_jobs_updated_at
+BEFORE UPDATE ON jobs
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER trg_papers_updated_at

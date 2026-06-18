@@ -17,9 +17,10 @@ Implemented or partially implemented:
 - LLM summarization through OpenRouter-compatible APIs.
 - Local and HTTP HaluGate validation.
 - Recursive research orchestration with Inner Loop, Iteration Loop, Branch Manager, Master Agent, Managing Agent, Reflection Agent, and Hypothesis generation.
-- FastAPI product API skeleton under `src/api` with a repository contract/factory, temporary in-memory repository, runtime research-loop binding, and process-local event streaming.
+- FastAPI product API skeleton under `src/api` with a repository contract/factory, in-memory and Postgres repositories, runtime research-loop binding, background job contract, and process-local event streaming.
 - Deterministic claim extraction and claim validation scaffolds under `src/claims`, with API endpoints for review-ready claims and supplied-evidence validation.
-- Initial Postgres product schema migration under `migrations/`.
+- Initial Postgres product schema migration under `migrations/`, including job persistence.
+- Worker adapter primitives under `src/jobs` for leasing, completing, retrying, and failing durable jobs.
 - Frontend dashboard shell in the Vite/React `viewer/` prototype with selectable branch and paper inspectors.
 - Convex event emission client for realtime visualization.
 - Convex schema/functions under `convex/` for prototype session replay state.
@@ -30,9 +31,9 @@ Not yet production-ready:
 
 - No production web dashboard backed by the target API/database/worker architecture.
 - The current dashboard shell is not yet the final `apps/web` Next.js frontend.
-- No running durable product database or Postgres-backed repository wired to the API. The repository contract/factory exists, but the only implemented backend is still in-memory.
-- The product API is skeleton-only and not connected to durable state, auth, workers, production-grade realtime infrastructure, or research job execution.
-- No job queue for long research runs.
+- No running durable product database or migration runner wired into deployment. Postgres support exists behind environment configuration, but local/dev deployment still defaults to memory.
+- The product API is skeleton-only and not connected to auth, production-grade realtime infrastructure, external queue infrastructure, or real research job execution.
+- No Redis/Celery-style external job queue for distributed long research runs.
 - No production claim verifier, automated evidence retrieval, or durable claim-level evidence ledger. Current validation is deterministic and in-memory only.
 - No finalized source-of-truth frontend architecture.
 - The CLI is still the primary interface.
@@ -175,9 +176,9 @@ erla fetch arxiv:2301.00001 --with-text
 
 ## Product API skeleton
 
-The product API is an early boundary for projects, sessions, branches, papers, claims, claim evidence, events, and run controls. It depends on a `ProductRepository` contract and creates the configured backend through `ERLA_REPOSITORY_BACKEND`, which defaults to `memory`. A Postgres-backed repository now exists behind `ERLA_REPOSITORY_BACKEND=postgres` and `ERLA_DATABASE_URL`, but workers and production deployment are still deferred.
+The product API is an early boundary for projects, sessions, branches, papers, claims, claim evidence, events, jobs, and run controls. It depends on a `ProductRepository` contract and creates the configured backend through `ERLA_REPOSITORY_BACKEND`, which defaults to `memory`. A Postgres-backed repository exists behind `ERLA_REPOSITORY_BACKEND=postgres` and `ERLA_DATABASE_URL`, but production deployment is still deferred.
 
-Session creation now creates a lightweight runtime `LoopState` and root branch through the existing research-core orchestration models. This binds product sessions to the current research loop shape, but it does not run long research work in API handlers and does not replace the future worker queue or durable repository.
+Session creation now creates a lightweight runtime `LoopState` and root branch through the existing research-core orchestration models. This binds product sessions to the current research loop shape. Run controls create durable job records rather than running long research work in API handlers; real research-core execution still needs worker handlers.
 
 Session events can be streamed over server-sent events from the in-memory event log. The stream replays current session events and publishes new process-local events, but it is not durable, resumable across API restarts, or a replacement for the future database-backed realtime layer.
 
@@ -194,7 +195,9 @@ Implemented skeleton endpoints include:
 - `POST /projects`, `GET /projects`, `GET /projects/{project_id}`
 - `POST /sessions`, `GET /sessions`, `GET /sessions/{session_id}`
 - `POST /sessions/{session_id}/start|pause|resume|cancel`
-- `GET /sessions/{session_id}/state`, `GET /sessions/{session_id}/loop`
+- `GET /sessions/{session_id}/state`, `GET /sessions/{session_id}/loop`, `GET /sessions/{session_id}/jobs`
+- `GET /jobs/{job_id}`, `POST /jobs/lease`, `POST /jobs/expire`
+- `POST /jobs/{job_id}/complete`, `POST /jobs/{job_id}/fail`
 - `GET /sessions/{session_id}/branches`, `GET /sessions/{session_id}/papers`, `GET /sessions/{session_id}/events`
 - `GET /sessions/{session_id}/events/stream`
 - `POST /sessions/{session_id}/claims/extract`, `GET /sessions/{session_id}/claims`
@@ -220,10 +223,10 @@ For production, move heavy validation to a separately deployed service with batc
 
 ## Development direction
 
-The next engineering milestone is a web dashboard MVP backed by durable state and worker-driven research execution. With the API skeleton, repository contract/factory, initial schema migration, prototype dashboard shell, session-to-loop binding, process-local event streaming, selectable branch/paper inspectors, deterministic claim extraction, and supplied-evidence claim validation in place, remaining work is:
+The next engineering milestone is a web dashboard MVP backed by durable state and worker-driven research execution. With the API skeleton, repository contract/factory, Postgres repository, job contract, initial schema migration, prototype dashboard shell, session-to-loop binding, process-local event streaming, selectable branch/paper inspectors, deterministic claim extraction, and supplied-evidence claim validation in place, remaining work is:
 
-1. Implement a Postgres-backed repository behind the existing `ProductRepository` contract for sessions, branches, papers, claims, evidence, and events.
-2. Add a background worker queue for long research runs.
+1. Connect worker handlers to the existing `MasterAgent`/research-core execution path.
+2. Add external queue/deployment infrastructure if multi-process workers need Redis/Celery-style coordination.
 3. Implement automated evidence retrieval and production claim verification.
 4. Decide whether to migrate the dashboard shell to Next.js under `apps/web` or formalize the existing `viewer/`.
 5. Connect session execution to the existing `MasterAgent` orchestration through workers.

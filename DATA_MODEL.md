@@ -141,7 +141,54 @@ pruned
 failed
 ```
 
-### 4.5 papers
+### 4.5 jobs
+
+Durable background work requested by API run controls and leased by workers.
+
+```txt
+id uuid primary key
+session_id uuid references research_sessions(id)
+branch_id uuid references branches(id)
+job_type text not null
+status text not null
+priority integer default 0
+payload jsonb
+result jsonb
+attempts integer default 0
+max_attempts integer default 3
+timeout_seconds integer default 1800
+run_at timestamptz
+locked_by text
+locked_at timestamptz
+last_error text
+completed_at timestamptz
+created_at timestamptz
+updated_at timestamptz
+```
+
+Allowed job types:
+
+```txt
+research_session
+branch_continue
+claim_extraction
+claim_validation
+export
+```
+
+Allowed job statuses:
+
+```txt
+queued
+running
+paused
+succeeded
+failed
+cancelled
+timed_out
+```
+
+### 4.6 papers
 
 Normalized academic papers. Current `PaperDetails` fields should map into this table.
 
@@ -177,7 +224,7 @@ Canonical key priority:
 4. OpenAlex ID.
 5. normalized title + year fallback.
 
-### 4.6 paper_authors
+### 4.7 paper_authors
 
 ```txt
 id uuid primary key
@@ -189,7 +236,7 @@ metadata jsonb
 created_at timestamptz
 ```
 
-### 4.7 session_papers
+### 4.8 session_papers
 
 Join table between sessions, branches, and papers.
 
@@ -216,7 +263,7 @@ manual_add
 agent_recommendation
 ```
 
-### 4.8 paper_edges
+### 4.9 paper_edges
 
 Citation/reference graph.
 
@@ -246,7 +293,7 @@ For citation edges:
 - `source_paper_id` = citing paper.
 - `target_paper_id` = cited paper.
 
-### 4.9 paper_documents
+### 4.10 paper_documents
 
 ```txt
 id uuid primary key
@@ -280,7 +327,7 @@ failed
 unavailable
 ```
 
-### 4.10 paper_chunks
+### 4.11 paper_chunks
 
 ```txt
 id uuid primary key
@@ -297,7 +344,7 @@ metadata jsonb
 created_at timestamptz
 ```
 
-### 4.11 summaries
+### 4.12 summaries
 
 Maps to current `ValidatedSummary`, but must support versioning and validation state.
 
@@ -337,7 +384,7 @@ partially_validated
 failed_validation
 ```
 
-### 4.12 claims
+### 4.13 claims
 
 Atomic factual or speculative claims.
 
@@ -382,7 +429,7 @@ speculative
 needs_review
 ```
 
-### 4.13 claim_evidence
+### 4.14 claim_evidence
 
 ```txt
 id uuid primary key
@@ -408,7 +455,7 @@ mentions
 insufficient
 ```
 
-### 4.14 validations
+### 4.15 validations
 
 ```txt
 id uuid primary key
@@ -450,7 +497,7 @@ error
 not_applicable
 ```
 
-### 4.15 hypotheses
+### 4.16 hypotheses
 
 Maps to current `ResearchHypothesis`, extended for product use.
 
@@ -489,7 +536,7 @@ selected
 archived
 ```
 
-### 4.16 hypothesis_support
+### 4.17 hypothesis_support
 
 ```txt
 id uuid primary key
@@ -510,7 +557,7 @@ missing_evidence
 background
 ```
 
-### 4.17 agent_decisions
+### 4.18 agent_decisions
 
 Audit log for consequential agent decisions.
 
@@ -546,7 +593,7 @@ research_direction
 export_synthesis
 ```
 
-### 4.18 events
+### 4.19 events
 
 Realtime and historical event log.
 
@@ -571,7 +618,7 @@ error
 critical
 ```
 
-### 4.19 exports
+### 4.20 exports
 
 ```txt
 id uuid primary key

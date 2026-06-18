@@ -17,6 +17,7 @@ def test_initial_migration_defines_required_tables():
         "research_sessions",
         "branches",
         "runtime_loop_bindings",
+        "jobs",
         "papers",
         "paper_authors",
         "session_papers",
@@ -46,6 +47,9 @@ def test_initial_migration_defines_required_indexes():
         "idx_branches_session_id",
         "idx_branches_parent_branch_id",
         "idx_runtime_loop_bindings_root_branch_id",
+        "idx_jobs_session_id",
+        "idx_jobs_status_run_at",
+        "idx_jobs_branch_id",
         "idx_papers_canonical_key",
         "idx_papers_doi",
         "idx_papers_arxiv_id",
@@ -80,6 +84,13 @@ def test_initial_migration_preserves_core_status_values():
         assert f"'{status}'" in MIGRATION_SQL
 
     for status in (
+        "queued",
+        "succeeded",
+        "timed_out",
+    ):
+        assert f"'{status}'" in MIGRATION_SQL
+
+    for status in (
         "supported",
         "weakly_supported",
         "contradicted",
@@ -111,6 +122,9 @@ def test_initial_migration_aligns_phase1_contract_columns():
         "generated_at timestamptz",
         "CREATE TABLE manual_claim_reviews",
         "CREATE TABLE runtime_loop_bindings",
+        "CREATE TABLE jobs",
+        "timeout_seconds integer NOT NULL DEFAULT 1800",
+        "locked_by text",
     ]
 
     for fragment in required_fragments:

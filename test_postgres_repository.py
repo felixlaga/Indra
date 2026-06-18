@@ -7,12 +7,19 @@ from uuid import uuid4
 
 import pytest
 
-from src.api.models import BranchStatus, EvidenceSourceType, SessionStatus
+from src.api.models import (
+    BranchStatus,
+    EvidenceSourceType,
+    JobStatus,
+    JobType,
+    SessionStatus,
+)
 from src.api.postgres_repository import (
     PostgresRepository,
     _branch_from_row,
     _claim_evidence_from_row,
     _event_from_row,
+    _job_from_row,
     _paper_from_row,
     _project_from_row,
     _runtime_loop_binding_from_row,
@@ -123,6 +130,32 @@ def test_core_row_mappers_preserve_uuid_strings_and_statuses() -> None:
         }
     )
     assert binding.root_branch_id == str(branch_id)
+
+    job = _job_from_row(
+        {
+            "id": uuid4(),
+            "session_id": session_id,
+            "branch_id": branch_id,
+            "job_type": "research_session",
+            "status": "running",
+            "payload": {"initial_query": "query"},
+            "result": {},
+            "priority": 0,
+            "attempts": 1,
+            "max_attempts": 3,
+            "timeout_seconds": 1800,
+            "run_at": timestamp,
+            "locked_by": "worker-1",
+            "locked_at": timestamp,
+            "last_error": None,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+            "completed_at": None,
+        }
+    )
+    assert job.job_type == JobType.RESEARCH_SESSION
+    assert job.status == JobStatus.RUNNING
+    assert job.locked_by == "worker-1"
 
     paper_row = {
         "id": paper_id,

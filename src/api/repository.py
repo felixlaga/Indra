@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from queue import Queue
 from threading import Lock
 from typing import TYPE_CHECKING, Protocol
@@ -29,6 +29,9 @@ from .models import (
     ClaimValidationRequest,
     ClaimValidationResult,
     Event,
+    Job,
+    JobStatus,
+    JobType,
     Paper,
     Project,
     ProjectCreate,
@@ -86,6 +89,28 @@ class ProductRepository(Protocol):
     def get_session_snapshot(self, session_id: str) -> SessionSnapshot: ...
 
     def get_runtime_loop_binding(self, session_id: str) -> RuntimeLoopBinding: ...
+
+    def list_jobs(self, session_id: str) -> list[Job]: ...
+
+    def get_job(self, job_id: str) -> Job: ...
+
+    def lease_next_job(
+        self,
+        worker_id: str,
+        job_types: list[JobType] | None = None,
+    ) -> Job | None: ...
+
+    def complete_job(self, job_id: str, result: dict | None = None) -> Job: ...
+
+    def fail_job(
+        self,
+        job_id: str,
+        error: str,
+        retryable: bool = True,
+        retry_delay_seconds: int = 60,
+    ) -> Job: ...
+
+    def expire_timed_out_jobs(self) -> list[Job]: ...
 
     def set_session_status(
         self,
@@ -166,6 +191,7 @@ class InMemoryRepository:
         self._summaries: dict[str, Summary] = {}
         self._claims: dict[str, Claim] = {}
         self._claim_evidence: dict[str, ClaimEvidence] = {}
+        self._jobs: dict[str, Job] = {}
         self._events: dict[str, Event] = {}
         self._event_subscribers: dict[str, list[Queue[Event]]] = {}
         self._runtime_loop_bindings: dict[str, RuntimeLoopBinding] = {}
@@ -291,6 +317,7 @@ class InMemoryRepository:
                 session=session,
                 runtime_loop=self._runtime_loop_bindings.get(session_id),
                 branches=self._list_branches_unlocked(session_id),
+                jobs=self._list_jobs_unlocked(session_id),
                 papers=self._list_papers_unlocked(session_id),
                 summaries=self._list_summaries_unlocked(session_id),
                 claims=self._list_claims_unlocked(session_id),
@@ -309,6 +336,120 @@ class InMemoryRepository:
                 return self._runtime_loop_bindings[session_id]
             except KeyError as exc:
                 raise NotFoundError("Runtime loop not found") from exc
+
+    def list_jobs(self, session_id: str) -> list[Job]:
+        """List durable jobs for a session."""
+
+        with self._lock:
+            self._get_session_unlocked(session_id)
+            return self._list_jobs_unlocked(session_id)
+
+    def get_job(self, job_id: str) -> Job:
+        """Get a background job."""
+
+        with self._lock:
+            return self._get_job_unlocked(job_id)
+
+    def lease_next_job(
+        self,
+        worker_id: str,
+        job_types: list[JobType] | None = None,
+    ) -> Job | None:
+        """Lease the next runnable job for a worker."""
+
+        with self._lock:
+            self._expire_timed_out_jobs_unlocked()
+            requested_types = set(job_types or [])
+            now = utc_now()
+            candidates = [
+                job
+                for job in self._jobs.values()
+                if job.status == JobStatus.QUEUED
+                and job.run_at <= now
+                and (not requested_types or job.job_type in requested_types)
+            ]
+            if not candidates:
+                return None
+
+            job = sorted(
+                candidates,
+                key=lambda candidate: (
+                    -candidate.priority,
+                    candidate.run_at,
+                    candidate.created_at,
+                ),
+            )[0]
+            job.status = JobStatus.RUNNING
+            job.attempts += 1
+            job.locked_by = worker_id
+            job.locked_at = now
+            job.updated_at = now
+            self._jobs[job.id] = job
+            self._create_event_unlocked(
+                session_id=job.session_id,
+                branch_id=job.branch_id,
+                event_type="job_started",
+                payload={
+                    "job_id": job.id,
+                    "job_type": job.job_type.value,
+                    "attempt": job.attempts,
+                    "worker_id": worker_id,
+                },
+            )
+            return job
+
+    def complete_job(self, job_id: str, result: dict | None = None) -> Job:
+        """Mark a leased job as succeeded."""
+
+        with self._lock:
+            job = self._get_job_unlocked(job_id)
+            if job.status != JobStatus.RUNNING:
+                raise ConflictError("Only running jobs can be completed")
+            now = utc_now()
+            job.status = JobStatus.SUCCEEDED
+            job.result = deepcopy(result or {})
+            job.locked_by = None
+            job.locked_at = None
+            job.completed_at = now
+            job.updated_at = now
+            self._jobs[job.id] = job
+            self._create_event_unlocked(
+                session_id=job.session_id,
+                branch_id=job.branch_id,
+                event_type="job_completed",
+                payload={
+                    "job_id": job.id,
+                    "job_type": job.job_type.value,
+                    "attempts": job.attempts,
+                },
+            )
+            return job
+
+    def fail_job(
+        self,
+        job_id: str,
+        error: str,
+        retryable: bool = True,
+        retry_delay_seconds: int = 60,
+    ) -> Job:
+        """Fail a running job and retry it when attempts remain."""
+
+        with self._lock:
+            job = self._get_job_unlocked(job_id)
+            if job.status != JobStatus.RUNNING:
+                raise ConflictError("Only running jobs can fail")
+            return self._fail_job_unlocked(
+                job,
+                error=error,
+                retryable=retryable,
+                retry_delay_seconds=retry_delay_seconds,
+            )
+
+    def expire_timed_out_jobs(self) -> list[Job]:
+        """Expire running jobs whose lease exceeded their timeout."""
+
+        with self._lock:
+            return self._expire_timed_out_jobs_unlocked()
 
     def set_session_status(
         self,
@@ -364,6 +505,22 @@ class InMemoryRepository:
                 event_type=event_type,
                 payload=event_payload,
             )
+            if event_type == "session_started":
+                self._enqueue_job_unlocked(
+                    session_id=session.id,
+                    branch_id=event_payload.get("root_branch_id"),
+                    job_type=JobType.RESEARCH_SESSION,
+                    payload={
+                        "initial_query": session.initial_query,
+                        **event_payload,
+                    },
+                )
+            elif event_type == "session_paused":
+                self._pause_session_jobs_unlocked(session.id)
+            elif event_type == "session_resumed":
+                self._resume_session_jobs_unlocked(session.id)
+            elif event_type == "session_cancelled":
+                self._cancel_session_jobs_unlocked(session.id)
             return session
 
     def list_branches(self, session_id: str) -> list[Branch]:
@@ -394,6 +551,12 @@ class InMemoryRepository:
                 session_id=branch.session_id,
                 branch_id=branch.id,
                 event_type="branch_continue_requested",
+                payload={"query": branch.query},
+            )
+            self._enqueue_job_unlocked(
+                session_id=branch.session_id,
+                branch_id=branch.id,
+                job_type=JobType.BRANCH_CONTINUE,
                 payload={"query": branch.query},
             )
             return branch
@@ -709,12 +872,235 @@ class InMemoryRepository:
         except KeyError as exc:
             raise NotFoundError("Claim not found") from exc
 
+    def _get_job_unlocked(self, job_id: str) -> Job:
+        try:
+            return self._jobs[job_id]
+        except KeyError as exc:
+            raise NotFoundError("Job not found") from exc
+
     def _list_branches_unlocked(self, session_id: str) -> list[Branch]:
         return [
             branch
             for branch in self._branches.values()
             if branch.session_id == session_id
         ]
+
+    def _list_jobs_unlocked(self, session_id: str) -> list[Job]:
+        jobs = [
+            job
+            for job in self._jobs.values()
+            if job.session_id == session_id
+        ]
+        return sorted(jobs, key=lambda job: (job.created_at, job.id))
+
+    def _enqueue_job_unlocked(
+        self,
+        *,
+        session_id: str,
+        branch_id: str | None,
+        job_type: JobType,
+        payload: dict,
+        priority: int = 0,
+        max_attempts: int = 3,
+        timeout_seconds: int = 1800,
+        run_at: datetime | None = None,
+    ) -> Job:
+        now = utc_now()
+        job = Job(
+            id=self._new_id("job"),
+            session_id=session_id,
+            branch_id=branch_id,
+            job_type=job_type,
+            status=JobStatus.QUEUED,
+            payload=deepcopy(payload),
+            result={},
+            priority=priority,
+            attempts=0,
+            max_attempts=max_attempts,
+            timeout_seconds=timeout_seconds,
+            run_at=run_at or now,
+            created_at=now,
+            updated_at=now,
+        )
+        self._jobs[job.id] = job
+        self._create_event_unlocked(
+            session_id=session_id,
+            branch_id=branch_id,
+            event_type="job_queued",
+            payload={
+                "job_id": job.id,
+                "job_type": job.job_type.value,
+                "run_at": job.run_at.isoformat(),
+                "max_attempts": job.max_attempts,
+                "timeout_seconds": job.timeout_seconds,
+            },
+        )
+        return job
+
+    def _pause_session_jobs_unlocked(self, session_id: str) -> None:
+        for job in self._list_jobs_unlocked(session_id):
+            if job.status not in {JobStatus.QUEUED, JobStatus.RUNNING}:
+                continue
+            job.status = JobStatus.PAUSED
+            job.locked_by = None
+            job.locked_at = None
+            job.updated_at = utc_now()
+            self._jobs[job.id] = job
+            self._create_event_unlocked(
+                session_id=session_id,
+                branch_id=job.branch_id,
+                event_type="job_paused",
+                payload={"job_id": job.id, "job_type": job.job_type.value},
+            )
+
+    def _resume_session_jobs_unlocked(self, session_id: str) -> None:
+        for job in self._list_jobs_unlocked(session_id):
+            if job.status != JobStatus.PAUSED:
+                continue
+            job.status = JobStatus.QUEUED
+            job.updated_at = utc_now()
+            self._jobs[job.id] = job
+            self._create_event_unlocked(
+                session_id=session_id,
+                branch_id=job.branch_id,
+                event_type="job_resumed",
+                payload={"job_id": job.id, "job_type": job.job_type.value},
+            )
+
+    def _cancel_session_jobs_unlocked(self, session_id: str) -> None:
+        for job in self._list_jobs_unlocked(session_id):
+            if job.status not in {
+                JobStatus.QUEUED,
+                JobStatus.RUNNING,
+                JobStatus.PAUSED,
+            }:
+                continue
+            now = utc_now()
+            job.status = JobStatus.CANCELLED
+            job.locked_by = None
+            job.locked_at = None
+            job.completed_at = now
+            job.updated_at = now
+            self._jobs[job.id] = job
+            self._create_event_unlocked(
+                session_id=session_id,
+                branch_id=job.branch_id,
+                event_type="job_cancelled",
+                payload={"job_id": job.id, "job_type": job.job_type.value},
+            )
+
+    def _fail_job_unlocked(
+        self,
+        job: Job,
+        *,
+        error: str,
+        retryable: bool,
+        retry_delay_seconds: int,
+    ) -> Job:
+        now = utc_now()
+        job.last_error = error
+        job.locked_by = None
+        job.locked_at = None
+        job.updated_at = now
+        if retryable and job.attempts < job.max_attempts:
+            job.status = JobStatus.QUEUED
+            job.run_at = now + timedelta(seconds=retry_delay_seconds)
+            self._jobs[job.id] = job
+            self._create_event_unlocked(
+                session_id=job.session_id,
+                branch_id=job.branch_id,
+                event_type="job_retry_scheduled",
+                payload={
+                    "job_id": job.id,
+                    "job_type": job.job_type.value,
+                    "attempts": job.attempts,
+                    "max_attempts": job.max_attempts,
+                    "error": error,
+                    "run_at": job.run_at.isoformat(),
+                },
+                severity="warning",
+            )
+            return job
+
+        job.status = JobStatus.FAILED
+        job.completed_at = now
+        self._jobs[job.id] = job
+        self._mark_job_target_failed_unlocked(job, error)
+        self._create_event_unlocked(
+            session_id=job.session_id,
+            branch_id=job.branch_id,
+            event_type="job_failed",
+            payload={
+                "job_id": job.id,
+                "job_type": job.job_type.value,
+                "attempts": job.attempts,
+                "max_attempts": job.max_attempts,
+                "error": error,
+            },
+            severity="error",
+        )
+        return job
+
+    def _expire_timed_out_jobs_unlocked(self) -> list[Job]:
+        now = utc_now()
+        expired: list[Job] = []
+        for job in list(self._jobs.values()):
+            if job.status != JobStatus.RUNNING or job.locked_at is None:
+                continue
+            deadline = job.locked_at + timedelta(seconds=job.timeout_seconds)
+            if deadline >= now:
+                continue
+            error = f"Job timed out after {job.timeout_seconds} seconds"
+            job.last_error = error
+            job.locked_by = None
+            job.locked_at = None
+            job.updated_at = now
+            if job.attempts < job.max_attempts:
+                job.status = JobStatus.QUEUED
+                job.run_at = now
+                retried = True
+                severity = "warning"
+            else:
+                job.status = JobStatus.TIMED_OUT
+                job.completed_at = now
+                retried = False
+                severity = "error"
+                self._mark_job_target_failed_unlocked(job, error)
+            self._jobs[job.id] = job
+            expired.append(job)
+            self._create_event_unlocked(
+                session_id=job.session_id,
+                branch_id=job.branch_id,
+                event_type="job_timed_out",
+                payload={
+                    "job_id": job.id,
+                    "job_type": job.job_type.value,
+                    "attempts": job.attempts,
+                    "max_attempts": job.max_attempts,
+                    "retried": retried,
+                    "error": error,
+                },
+                severity=severity,
+            )
+        return expired
+
+    def _mark_job_target_failed_unlocked(self, job: Job, error: str) -> None:
+        now = utc_now()
+        if job.job_type == JobType.RESEARCH_SESSION:
+            session = self._sessions.get(job.session_id)
+            if session is not None:
+                session.status = SessionStatus.FAILED
+                session.failure_reason = error
+                session.completed_at = now
+                session.updated_at = now
+                self._sessions[session.id] = session
+        if job.branch_id:
+            branch = self._branches.get(job.branch_id)
+            if branch is not None:
+                branch.status = BranchStatus.FAILED
+                branch.failure_reason = error
+                branch.updated_at = now
+                self._branches[branch.id] = branch
 
     def _list_papers_unlocked(self, session_id: str) -> list[SessionPaperView]:
         views: list[SessionPaperView] = []

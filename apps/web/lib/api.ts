@@ -1,0 +1,86 @@
+import type {
+  Branch,
+  Paper,
+  Project,
+  ProjectCreate,
+  ResearchSession,
+  SessionCreate,
+  SessionSnapshot,
+} from "@/lib/types";
+
+const API_URL = (
+  process.env.NEXT_PUBLIC_ERLA_API_URL ?? "http://localhost:8000"
+).replace(/\/$/, "");
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly detail?: unknown,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: {
+      Accept: "application/json",
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...init?.headers,
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    let detail: unknown;
+    try {
+      detail = await response.json();
+    } catch {
+      detail = await response.text();
+    }
+    const message =
+      typeof detail === "object" && detail !== null && "detail" in detail
+        ? String((detail as { detail: unknown }).detail)
+        : `ERLA API request failed with status ${response.status}`;
+    throw new ApiError(message, response.status, detail);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  return (await response.json()) as T;
+}
+
+export const erlaApi = {
+  baseUrl: API_URL,
+  listProjects: () => request<Project[]>("/projects"),
+  getProject: (projectId: string) => request<Project>(`/projects/${projectId}`),
+  createProject: (payload: ProjectCreate) =>
+    request<Project>("/projects", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  listSessions: () => request<ResearchSession[]>("/sessions"),
+  createSession: (payload: SessionCreate) =>
+    request<ResearchSession>("/sessions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getSessionSnapshot: (sessionId: string) =>
+    request<SessionSnapshot>(`/sessions/${sessionId}/state`),
+  runSessionAction: (
+    sessionId: string,
+    action: "start" | "pause" | "resume" | "cancel",
+  ) =>
+    request<ResearchSession>(`/sessions/${sessionId}/${action}`, {
+      method: "POST",
+    }),
+  continueBranch: (branchId: string) =>
+    request<Branch>(`/branches/${branchId}/continue`, { method: "POST" }),
+  pruneBranch: (branchId: string) =>
+    request<Branch>(`/branches/${branchId}/prune`, { method: "POST" }),
+  getPaper: (paperId: string) => request<Paper>(`/papers/${paperId}`),
+};

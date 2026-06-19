@@ -124,8 +124,9 @@ def auto_validate_claim(
 
         session_papers = repository.list_papers(claim.session_id)
         if claim.paper_id:
+            canonical_paper = repository.get_paper(claim.paper_id)
             session_papers = [
-                entry for entry in session_papers if entry.paper_id == claim.paper_id
+                entry for entry in session_papers if entry.paper_id == canonical_paper.id
             ]
         elif not payload.include_session_papers:
             session_papers = []

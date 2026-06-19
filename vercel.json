@@ -1,6 +1,5 @@
 {
-  "buildCommand": "cd viewer && rm -rf convex && cp -r ../convex . && bun run build",
-  "outputDirectory": "viewer/dist",
-  "framework": "vite",
-  "installCommand": "cd viewer && bun install"
+  "framework": "nextjs",
+  "installCommand": "npm --prefix apps/web install",
+  "buildCommand": "npm --prefix apps/web run build"
 }

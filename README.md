@@ -1,101 +1,62 @@
 # ERLA — Epistemic Research Landscape Agent
 
-ERLA is a recursive research navigator for scientific literature. It searches academic paper sources, follows citation/reference structure, summarizes papers, validates generated text against source material, and grows a branching research map through autonomous Scouts.
+ERLA is an evidence-backed research navigator for scientific literature. It searches academic sources, grows a branching research map, preserves session state, exposes agent and job events, and is designed to validate generated claims against inspectable evidence.
 
-The immediate product direction is not to become a generic AI writing assistant. ERLA should become a research mission-control dashboard: a system that helps researchers understand a field, inspect evidence, identify gaps and contradictions, and decide what to read or investigate next.
+ERLA is not primarily a generic chatbot or writing assistant. The product direction is a research mission-control workspace that helps researchers understand a field, inspect papers and branch rationale, and decide what to read or investigate next.
 
 ## Current repository state
 
-This repository currently contains a Python-first research core, CLI prototype, and early realtime visualization prototype.
-
 Implemented or partially implemented:
 
-- Paper search through Semantic Scholar.
-- Paper search through arXiv.
-- Composite multi-provider search with parallel/fallback/single strategies.
+- Paper search through Semantic Scholar and arXiv.
+- Composite multi-provider search with parallel, fallback, and single-source strategies.
 - PDF text extraction through PyMuPDF.
 - LLM summarization through OpenRouter-compatible APIs.
 - Local and HTTP HaluGate validation.
-- Recursive research orchestration with Inner Loop, Iteration Loop, Branch Manager, Master Agent, Managing Agent, Reflection Agent, and Hypothesis generation.
-- FastAPI product API skeleton under `src/api` with a repository contract/factory, in-memory and Postgres repositories, runtime research-loop binding, background job contract, and process-local event streaming.
-- Deterministic claim extraction and claim validation scaffolds under `src/claims`, with API endpoints for review-ready claims and supplied-evidence validation.
-- Initial Postgres product schema migration under `migrations/`, including job persistence.
-- Worker adapter primitives under `src/jobs` for leasing, completing, retrying, and failing durable jobs.
-- Frontend dashboard shell in the Vite/React `viewer/` prototype with selectable branch and paper inspectors.
-- Convex event emission client for realtime visualization.
-- Convex schema/functions under `convex/` for prototype session replay state.
-- Vite/React viewer under `viewer/` for prototype graph, event, and chat exploration.
+- Recursive research orchestration with Inner Loop, Iteration Loop, Branch Manager, Master Agent, Managing Agent, Reflection Agent, and hypothesis generation.
+- FastAPI product API under `src/api` with projects, sessions, branches, papers, claims, events, run controls, and durable job contracts.
+- In-memory and Postgres repository implementations.
+- Initial Postgres product schema and job persistence under `migrations/`.
+- Worker adapter primitives under `src/jobs` for leasing, completing, retrying, and failing jobs.
+- Deterministic claim extraction and supplied-evidence validation scaffolds under `src/claims`.
+- Next.js web dashboard under `apps/web` for projects, session creation, session mission control, branch inspection, paper inspection, jobs, claims, and events.
+- Legacy Convex and Vite/React visualization prototypes under `convex/` and `viewer/`.
 - Typer CLI commands for search, fetch, and profile listing.
 
 Not yet production-ready:
 
-- No production web dashboard backed by the target API/database/worker architecture.
-- The current dashboard shell is not yet the final `apps/web` Next.js frontend.
-- No running durable product database or migration runner wired into deployment. Postgres support exists behind environment configuration, but local/dev deployment still defaults to memory.
-- The product API is skeleton-only and not connected to auth, production-grade realtime infrastructure, external queue infrastructure, or real research job execution.
-- No Redis/Celery-style external job queue for distributed long research runs.
-- No production claim verifier, automated evidence retrieval, or durable claim-level evidence ledger. Current validation is deterministic and in-memory only.
-- No finalized source-of-truth frontend architecture.
-- The CLI is still the primary interface.
+- Research jobs are durably queued, but the Phase 3 worker contract is not yet connected to full `MasterAgent` execution.
+- The SSE stream is process-local and not resumable across API restarts.
+- No authentication or multi-user authorization boundary.
+- No automated evidence retrieval or production claim verifier.
+- No production deployment of the Postgres repository and migration runner.
+- No distributed external queue infrastructure.
+- Exports, collaboration, large research maps, gap analysis, and contradiction analysis remain later roadmap phases.
 
-## Product thesis
+## Product architecture
 
-ERLA should help a researcher move from an unclear research question to:
-
-1. A mapped research landscape.
-2. A live Scout/branch tree.
-3. A paper library.
-4. Validated paper summaries.
-5. Atomic claims linked to evidence.
-6. Gap and contradiction analysis.
-7. A reading plan.
-8. Evidence-backed research-direction recommendations.
-9. Exportable notes, citations, and review outlines.
-
-## Architecture summary
-
-Current package layout:
-
-```txt
-src/
-  cli.py                         Typer CLI entrypoint
-  api/                           FastAPI product API skeleton
-  claims/                        deterministic claim extraction/validation scaffolds
-  summarize.py                   LLM paper summarization
-  config/                        Pydantic config and model profiles
-  semantic_scholar/              Semantic Scholar client, models, protocols, adapter
-  arxiv/                         arXiv client and adapter
-  paper_sources/                 composite provider and deduplication
-  halugate/                      local + HTTP hallucination validation
-  orchestration/                 recursive research loops and agents
-  hypothesis/                    hypothesis generation and validation
-  context/                       context estimation and branch splitting
-  llm/                           OpenRouter adapter and LLM protocols
-  storage/                       Convex realtime event client
-convex/                          prototype realtime schema and functions
-viewer/                          prototype Vite/React research viewer
+```text
+apps/web/                        Next.js product dashboard
+src/api/                         FastAPI product API
+src/                             research core and provider integrations
+src/jobs/                        worker adapter and durable job execution boundary
+migrations/                      Postgres schema migrations
+viewer/                          legacy Vite/React prototype
+convex/                          legacy realtime prototype
 ```
 
-Target product architecture:
+Runtime boundary:
 
-```txt
-apps/web/                        Next.js dashboard
-apps/api/                        FastAPI product API
-src/                             existing research core, migrated carefully
-workers/                         background jobs
-migrations/                      database migrations
-docs or root *.md                source-of-truth product/engineering docs
+```text
+frontend -> product API -> durable jobs/workers -> research core -> providers
+                       -> repository/events -> frontend
 ```
 
-The existing `src` package should be preserved as the research core for now. Do not rewrite it wholesale before the dashboard, API, durable state, and validation model are defined.
-
-The existing `convex/` and `viewer/` directories are prototype realtime/viewer surfaces. They may inform the dashboard MVP, but they are not the final product API, durable database, worker layer, or source-of-truth frontend architecture.
+The frontend must not import the Python research core. Long-running research work must not execute synchronously inside API handlers.
 
 ## Installation
 
-Python requirement is currently 3.13 or newer.
-
-Recommended development setup:
+Python 3.13 or newer is required.
 
 ```bash
 uv sync
@@ -121,12 +82,18 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_MODEL=anthropic/claude-3-5-sonnet
 ```
 
-Optional:
+Product API and persistence:
+
+```bash
+ERLA_REPOSITORY_BACKEND=memory
+ERLA_DATABASE_URL=postgresql://user:password@localhost:5432/erla
+ERLA_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+```
+
+Optional provider and validation settings:
 
 ```bash
 MODEL_PROFILE=research-fast
-ERLA_REPOSITORY_BACKEND=memory
-ERLA_DATABASE_URL=postgresql://user:password@localhost:5432/erla
 SEMANTIC_SCHOLAR_API_KEY=...
 HALUGATE_URL=http://localhost:8000
 HALUGATE_DEVICE=cpu
@@ -134,107 +101,109 @@ HALUGATE_USE_SENTINEL=true
 CONVEX_URL=...
 ```
 
-## CLI usage
-
-The CLI is a developer/prototype interface, not the final product UX.
-
-List config profiles:
+## Run the product API
 
 ```bash
-erla profiles
+uvicorn src.api.app:app --reload --port 8000
 ```
 
-Search Semantic Scholar:
-
-```bash
-erla search "wave optics gravitational wave lensing" --source semantic_scholar --limit 10
-```
-
-Search arXiv:
-
-```bash
-erla search "transformer attention" --source arxiv --arxiv-cat cs.LG --limit 10
-```
-
-Search multiple providers:
-
-```bash
-erla search "LLM reasoning" --source semantic_scholar --source arxiv --strategy parallel --limit 20
-```
-
-Fetch paper metadata:
-
-```bash
-erla fetch arxiv:2301.00001
-```
-
-Fetch with PDF text extraction when available:
-
-```bash
-erla fetch arxiv:2301.00001 --with-text
-```
-
-## Product API skeleton
-
-The product API is an early boundary for projects, sessions, branches, papers, claims, claim evidence, events, jobs, and run controls. It depends on a `ProductRepository` contract and creates the configured backend through `ERLA_REPOSITORY_BACKEND`, which defaults to `memory`. A Postgres-backed repository exists behind `ERLA_REPOSITORY_BACKEND=postgres` and `ERLA_DATABASE_URL`, but production deployment is still deferred.
-
-Session creation now creates a lightweight runtime `LoopState` and root branch through the existing research-core orchestration models. This binds product sessions to the current research loop shape. Run controls create durable job records rather than running long research work in API handlers; real research-core execution still needs worker handlers.
-
-Session events can be streamed over server-sent events from the in-memory event log. The stream replays current session events and publishes new process-local events, but it is not durable, resumable across API restarts, or a replacement for the future database-backed realtime layer.
-
-Claim validation accepts explicitly supplied evidence passages, stores process-local evidence records, updates claim status using deterministic relation rules, and emits `claim_validated`. It does not retrieve evidence automatically, call a production verifier, or persist evidence beyond the in-memory API process.
-
-Run locally:
-
-```bash
-uvicorn src.api.app:app --reload
-```
-
-Implemented skeleton endpoints include:
+Important endpoints include:
 
 - `POST /projects`, `GET /projects`, `GET /projects/{project_id}`
 - `POST /sessions`, `GET /sessions`, `GET /sessions/{session_id}`
+- `GET /sessions/{session_id}/state`
 - `POST /sessions/{session_id}/start|pause|resume|cancel`
-- `GET /sessions/{session_id}/state`, `GET /sessions/{session_id}/loop`, `GET /sessions/{session_id}/jobs`
-- `GET /jobs/{job_id}`, `POST /jobs/lease`, `POST /jobs/expire`
-- `POST /jobs/{job_id}/complete`, `POST /jobs/{job_id}/fail`
-- `GET /sessions/{session_id}/branches`, `GET /sessions/{session_id}/papers`, `GET /sessions/{session_id}/events`
+- `GET /sessions/{session_id}/branches|papers|claims|jobs|events`
 - `GET /sessions/{session_id}/events/stream`
-- `POST /sessions/{session_id}/claims/extract`, `GET /sessions/{session_id}/claims`
-- `POST /claims/{claim_id}/validate`, `GET /claims/{claim_id}/evidence`
-- `GET /branches/{branch_id}`, `PATCH /branches/{branch_id}`
 - `POST /branches/{branch_id}/continue|split|prune`
-- `GET /papers/{paper_id}`, `GET /claims/{claim_id}`
+- `GET /papers/{paper_id}`
+- `POST /sessions/{session_id}/claims/extract`
+- `POST /claims/{claim_id}/validate`
+- `GET /claims/{claim_id}/evidence`
+- `POST /jobs/lease`, `POST /jobs/{job_id}/complete|fail`
+
+The default repository backend is process-local memory. Use `ERLA_REPOSITORY_BACKEND=postgres` with `ERLA_DATABASE_URL` for the durable repository implementation.
+
+## Run the web dashboard
+
+```bash
+cd apps/web
+cp .env.example .env.local
+npm install
+npm run dev
+```
+
+The default frontend configuration is:
+
+```bash
+NEXT_PUBLIC_ERLA_API_URL=http://localhost:8000
+```
+
+Open `http://localhost:3000/projects`.
+
+The Phase 4 dashboard provides:
+
+- Searchable project portfolio and project creation.
+- Project detail pages and online session creation.
+- Session start, pause, resume, and cancel controls.
+- Hierarchical branch inspection with continue and prune actions.
+- Paper lists, in-session paper inspection, and paper detail pages.
+- Live event consumption through server-sent events.
+- Job status and claim-ledger panels.
+- Explicit loading, empty, failure, partial-state, and disconnected-stream states.
+
+See `docs/phase4/WEB_DASHBOARD_MVP.md` for the delivered scope and current limits.
+
+## Verification
+
+Frontend:
+
+```bash
+cd apps/web
+npm run typecheck
+npm test
+npm run build
+```
+
+Backend API boundary:
+
+```bash
+pytest test_api_cors.py test_api.py
+```
+
+A GitHub Actions workflow under `.github/workflows/phase4-dashboard.yml` runs these checks for dashboard-related pull requests.
+
+## CLI prototype
+
+The CLI remains useful for provider and research-core development, but it is no longer the intended primary product interface.
+
+```bash
+erla profiles
+erla search "wave optics gravitational wave lensing" --source semantic_scholar --limit 10
+erla search "transformer attention" --source arxiv --arxiv-cat cs.LG --limit 10
+erla fetch arxiv:2301.00001 --with-text
+```
 
 ## HaluGate service
 
-Run validation service locally:
-
 ```bash
-HALUGATE_DEVICE=cpu uvicorn src.halugate.server:app --host 0.0.0.0 --port 8000
+HALUGATE_DEVICE=cpu uvicorn src.halugate.server:app --host 0.0.0.0 --port 8001
 ```
 
-The HaluGate service exposes:
+The service exposes `GET /health` and `POST /validate`.
 
-- `GET /health`
-- `POST /validate`
+## Next engineering priorities
 
-For production, move heavy validation to a separately deployed service with batching, caching, timeouts, and GPU support where appropriate.
+1. Connect durable research jobs to the existing `MasterAgent` execution path.
+2. Persist and stream production events across processes.
+3. Add automated evidence retrieval and a production claim verifier.
+4. Add authentication and project authorization.
+5. Add branch splitting controls, claim evidence inspection, and exports.
+6. Deploy the Postgres repository, migration runner, API, workers, and web dashboard as one coherent product system.
 
-## Development direction
+## Source-of-truth documents
 
-The next engineering milestone is a web dashboard MVP backed by durable state and worker-driven research execution. With the API skeleton, repository contract/factory, Postgres repository, job contract, initial schema migration, prototype dashboard shell, session-to-loop binding, process-local event streaming, selectable branch/paper inspectors, deterministic claim extraction, and supplied-evidence claim validation in place, remaining work is:
-
-1. Connect worker handlers to the existing `MasterAgent`/research-core execution path.
-2. Add external queue/deployment infrastructure if multi-process workers need Redis/Celery-style coordination.
-3. Implement automated evidence retrieval and production claim verification.
-4. Decide whether to migrate the dashboard shell to Next.js under `apps/web` or formalize the existing `viewer/`.
-5. Connect session execution to the existing `MasterAgent` orchestration through workers.
-6. Add branch tree, claim inspector, evidence passage viewer, and richer event log interactions.
-
-## Source-of-truth docs
-
-Read these files before making product or architecture changes:
+Before major product or architecture changes, read:
 
 - `PRODUCT_SPEC.md`
 - `ARCHITECTURE.md`
@@ -247,18 +216,6 @@ Read these files before making product or architecture changes:
 - `CODE_STYLE.md`
 - `CODEX.md`
 
-## Non-goals for the next milestone
-
-Do not prioritize:
-
-- A full AI writing editor.
-- Payment system.
-- Browser extension.
-- Mobile app.
-- Enterprise admin dashboard.
-- Fancy 3D visualization before usable graph navigation.
-- Major refactors that do not unblock the dashboard or validation layer.
-
 ## Core rule
 
-If ERLA produces a factual claim, that claim must eventually be decomposed, validated, and linked to source evidence. Unsupported or speculative output must be labeled as such.
+If ERLA produces a factual claim, that claim must eventually be decomposed, validated, and linked to source evidence. Unsupported or speculative output must remain explicitly labeled.

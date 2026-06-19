@@ -60,10 +60,10 @@ function BranchTreeRow({
         <ul className="branch-tree-children">
           {node.children.map((child) => (
             <BranchTreeRow
+              key={child.id}
               node={child}
               selectedId={selectedId}
               onSelect={onSelect}
-              key={child.id}
             />
           ))}
         </ul>
@@ -89,7 +89,11 @@ function EventLog({ events }: { events: EventRecord[] }) {
           <time>{formatDate(event.created_at)}</time>
           <div>
             <strong>{event.event_type.replaceAll("_", " ")}</strong>
-            <p>{Object.keys(event.payload).length ? JSON.stringify(event.payload) : "No additional payload"}</p>
+            <p>
+              {Object.keys(event.payload).length
+                ? JSON.stringify(event.payload)
+                : "No additional payload"}
+            </p>
           </div>
         </article>
       ))}
@@ -157,10 +161,19 @@ function ClaimsPanel({ claims }: { claims: Claim[] }) {
         <tbody>
           {claims.map((claim) => (
             <tr key={claim.id}>
-              <td>{claim.claim_text}</td>
+              <td>
+                <Link className="claim-ledger-link" href={`/claims/${claim.id}`}>
+                  {claim.claim_text}
+                  <span>Inspect evidence →</span>
+                </Link>
+              </td>
               <td>{claim.claim_type.replaceAll("_", " ")}</td>
               <td><StatusBadge status={claim.status} compact /></td>
-              <td>{claim.confidence == null ? "—" : `${Math.round(claim.confidence * 100)}%`}</td>
+              <td>
+                {claim.confidence == null
+                  ? "—"
+                  : `${Math.round(claim.confidence * 100)}%`}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -242,7 +255,7 @@ function PaperInspector({ entry }: { entry: SessionPaperView }) {
           <p className="eyebrow">Paper inspector</p>
           <h2>{paper.title}</h2>
         </div>
-        {entry.selected ? <StatusBadge status="selected" /> : <StatusBadge status="candidate" />}
+        <StatusBadge status={entry.selected ? "selected" : "candidate"} />
       </div>
       <p className="paper-authors">{authorNames(paper.authors)}</p>
       <dl className="metric-grid metric-grid-2 compact-metrics">
@@ -264,7 +277,12 @@ function PaperInspector({ entry }: { entry: SessionPaperView }) {
           Open paper page
         </Link>
         {paper.url ? (
-          <a className="button button-secondary button-small" href={paper.url} target="_blank" rel="noreferrer">
+          <a
+            className="button button-secondary button-small"
+            href={paper.url}
+            target="_blank"
+            rel="noreferrer"
+          >
             External source
           </a>
         ) : null}
@@ -319,13 +337,14 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
   }, [load]);
 
   const stream = useSessionEventStream(sessionId, handleStreamEvent);
-
   const branchTree = useMemo(
     () => (snapshot ? (buildBranchTree(snapshot.branches) as BranchNode[]) : []),
     [snapshot],
   );
-  const selectedBranch = snapshot?.branches.find((branch) => branch.id === selectedBranchId) ?? null;
-  const selectedPaper = snapshot?.papers.find((entry) => entry.paper_id === selectedPaperId) ?? null;
+  const selectedBranch =
+    snapshot?.branches.find((branch) => branch.id === selectedBranchId) ?? null;
+  const selectedPaper =
+    snapshot?.papers.find((entry) => entry.paper_id === selectedPaperId) ?? null;
   const branchPapers = selectedBranch
     ? snapshot?.papers.filter((paper) => paper.branch_id === selectedBranch.id) ?? []
     : [];
@@ -361,7 +380,6 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
   if (loading) {
     return <div className="dashboard-loading">Loading durable session state…</div>;
   }
-
   if (error && !snapshot) {
     return (
       <main className="page-shell">
@@ -369,10 +387,9 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
       </main>
     );
   }
-
   if (!snapshot) return null;
-  const session = snapshot.session;
 
+  const session = snapshot.session;
   return (
     <main className="session-dashboard">
       <header className="session-topbar">
@@ -422,13 +439,13 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
               <ul className="branch-tree">
                 {branchTree.map((node) => (
                   <BranchTreeRow
+                    key={node.id}
                     node={node}
                     selectedId={selectedBranchId}
                     onSelect={(branch) => {
                       setSelectedBranchId(branch.id);
                       setSelectedPaperId(null);
                     }}
-                    key={node.id}
                   />
                 ))}
               </ul>

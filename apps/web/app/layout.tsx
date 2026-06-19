@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { SessionExportShortcut } from "@/components/session-export-shortcut";
 import { SessionMapShortcut } from "@/components/session-map-shortcut";
 
 import "./globals.css";
@@ -19,6 +20,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         {children}
         <SessionMapShortcut />
+        <SessionExportShortcut />
       </body>
     </html>
   );

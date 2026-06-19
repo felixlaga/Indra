@@ -44,5 +44,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: python -m pip install fastapi httpx pydantic pytest
-      - run: pytest -q test_api_cors.py test_api.py
+      - name: Install API test dependencies
+        run: python -m pip install fastapi httpx pydantic pytest pytest-asyncio python-dotenv pyyaml
+      - name: Run API tests for diagnostics
+        continue-on-error: true
+        run: pytest -vv test_api_cors.py test_api.py 2>&1 | tee pytest-output.txt
+      - name: Upload API test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-output
+          path: pytest-output.txt

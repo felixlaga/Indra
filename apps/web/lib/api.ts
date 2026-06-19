@@ -1,5 +1,7 @@
 import type {
   Branch,
+  ClaimAutoValidationResult,
+  ClaimInspection,
   Paper,
   Project,
   ProjectCreate,
@@ -83,4 +85,14 @@ export const erlaApi = {
   pruneBranch: (branchId: string) =>
     request<Branch>(`/branches/${branchId}/prune`, { method: "POST" }),
   getPaper: (paperId: string) => request<Paper>(`/papers/${paperId}`),
+  getClaimInspection: (claimId: string) =>
+    request<ClaimInspection>(`/claims/${claimId}/inspection`),
+  autoValidateClaim: (
+    claimId: string,
+    payload: { top_k?: number; min_score?: number; include_session_papers?: boolean } = {},
+  ) =>
+    request<ClaimAutoValidationResult>(`/claims/${claimId}/validate/auto`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 };

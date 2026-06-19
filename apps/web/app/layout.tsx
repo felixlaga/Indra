@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import "./globals.css";
+import "./phase5.css";
 
 export const metadata: Metadata = {
   title: {

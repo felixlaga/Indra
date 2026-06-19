@@ -8,7 +8,11 @@ export function SessionExportShortcut() {
   const match = pathname.match(/^\/sessions\/([^/]+)$/);
   if (!match) return null;
   return (
-    <Link className="session-export-shortcut" href={`/sessions/${match[1]}/exports`}>
+    <Link
+      className="session-map-shortcut"
+      href={`/sessions/${match[1]}/exports`}
+      style={{ position: "fixed", right: 18, bottom: 66, zIndex: 31 }}
+    >
       Export artifacts
     </Link>
   );

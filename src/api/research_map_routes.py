@@ -1,12 +1,14 @@
-"""Session research-map routes."""
+"""Session research-map and research-advice routes."""
 
 from fastapi import APIRouter, Request
 
 from ..maps import ResearchMap, ResearchMapBuilder
 from .repository import RepositoryError
+from .research_advice_routes import router as research_advice_router
 from .routes import get_repository, handle_repository_error
 
 router = APIRouter()
+router.include_router(research_advice_router)
 _builder = ResearchMapBuilder()
 
 

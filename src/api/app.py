@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .claim_validation_routes import router as claim_validation_router
+from .research_map_routes import router as research_map_router
 from .repository import ProductRepository
 from .repository_factory import create_repository
 from .routes import router
@@ -43,6 +44,7 @@ def create_app(repository: ProductRepository | None = None) -> FastAPI:
     app.state.repository = repository or create_repository()
     app.include_router(router)
     app.include_router(claim_validation_router)
+    app.include_router(research_map_router)
     return app
 
 

@@ -209,6 +209,92 @@ export interface SessionSnapshot {
   events: EventRecord[];
 }
 
+export type ResearchMapPaperRole =
+  | "foundational_candidate"
+  | "recent"
+  | "established"
+  | "undated";
+
+export interface ResearchMapNode {
+  paper_id: string;
+  title: string;
+  year?: number | null;
+  venue?: string | null;
+  branch_id?: string | null;
+  cluster_id: string;
+  role: ResearchMapPaperRole;
+  citation_count: number;
+  influential_citation_count: number;
+  selected: boolean;
+  foundational_score: number;
+}
+
+export interface ResearchMapEdge {
+  id: string;
+  source_paper_id: string;
+  target_paper_id: string;
+  edge_type: "cites" | "referenced_by" | "related" | "same_author" | "methodologically_related";
+  observed: boolean;
+  score?: number | null;
+  provenance: string;
+}
+
+export interface ResearchMapCluster {
+  id: string;
+  label: string;
+  paper_ids: string[];
+  branch_id?: string | null;
+  keywords: string[];
+}
+
+export interface ResearchTimelineBucket {
+  year: number;
+  paper_ids: string[];
+}
+
+export interface RelatedPaperRecommendation {
+  source_paper_id: string;
+  target_paper_id: string;
+  score: number;
+  reason: string;
+  shared_terms: string[];
+}
+
+export interface BranchMapSynthesis {
+  branch_id: string;
+  label: string;
+  text: string;
+  source: "persisted_summary" | "validated_claims" | "structural_fallback";
+  validation_status?: string | null;
+  paper_ids: string[];
+  claim_ids: string[];
+}
+
+export interface FieldOverview {
+  text: string;
+  paper_count: number;
+  cluster_count: number;
+  edge_count: number;
+  observed_citation_edge_count: number;
+  foundational_candidate_count: number;
+  recent_paper_count: number;
+  earliest_year?: number | null;
+  latest_year?: number | null;
+  claim_status_counts: Record<string, number>;
+  caveats: string[];
+}
+
+export interface ResearchMap {
+  session_id: string;
+  nodes: ResearchMapNode[];
+  edges: ResearchMapEdge[];
+  clusters: ResearchMapCluster[];
+  timeline: ResearchTimelineBucket[];
+  recommendations: RelatedPaperRecommendation[];
+  branch_syntheses: BranchMapSynthesis[];
+  overview: FieldOverview;
+}
+
 export interface ProjectMetrics {
   sessionCount: number;
   paperCount: number;

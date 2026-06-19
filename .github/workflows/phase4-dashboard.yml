@@ -1,4 +1,4 @@
-name: Product dashboard and validation
+name: Product dashboard, validation, and maps
 
 on:
   pull_request:
@@ -6,9 +6,11 @@ on:
       - "apps/web/**"
       - "src/api/**"
       - "src/claims/**"
+      - "src/maps/**"
       - "test_api.py"
       - "test_api_cors.py"
       - "test_claim_evidence_retrieval.py"
+      - "test_research_map.py"
       - "vercel.json"
       - ".github/workflows/phase4-dashboard.yml"
   push:
@@ -17,9 +19,11 @@ on:
       - "apps/web/**"
       - "src/api/**"
       - "src/claims/**"
+      - "src/maps/**"
       - "test_api.py"
       - "test_api_cors.py"
       - "test_claim_evidence_retrieval.py"
+      - "test_research_map.py"
       - "vercel.json"
       - ".github/workflows/phase4-dashboard.yml"
 
@@ -50,5 +54,5 @@ jobs:
           python-version: "3.13"
       - name: Install Python dependencies
         run: python -m pip install fastapi httpx pydantic pytest pytest-asyncio python-dotenv pyyaml
-      - name: Verify API and claim validation boundaries
-        run: python -m pytest -q test_api_cors.py test_api.py test_claim_evidence_retrieval.py
+      - name: Verify API, validation, and map boundaries
+        run: python -m pytest -q test_api_cors.py test_api.py test_claim_evidence_retrieval.py test_research_map.py

@@ -5,6 +5,7 @@ import type {
   Paper,
   Project,
   ProjectCreate,
+  ResearchMap,
   ResearchSession,
   SessionCreate,
   SessionSnapshot,
@@ -73,6 +74,8 @@ export const erlaApi = {
     }),
   getSessionSnapshot: (sessionId: string) =>
     request<SessionSnapshot>(`/sessions/${sessionId}/state`),
+  getResearchMap: (sessionId: string) =>
+    request<ResearchMap>(`/sessions/${sessionId}/map`),
   runSessionAction: (
     sessionId: string,
     action: "start" | "pause" | "resume" | "cancel",

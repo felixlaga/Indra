@@ -1,6 +1,6 @@
 # ERLA — Epistemic Research Landscape Agent
 
-ERLA is an evidence-backed research navigator for scientific literature. It searches academic sources, grows a branching research map, preserves session state, exposes agent and job events, and is designed to validate generated claims against inspectable evidence.
+ERLA is an evidence-backed research navigator for scientific literature. It searches academic sources, grows a branching research map, preserves session state, exposes agent and job events, and validates atomic claims against inspectable source evidence.
 
 ERLA is not primarily a generic chatbot or writing assistant. The product direction is a research mission-control workspace that helps researchers understand a field, inspect papers and branch rationale, and decide what to read or investigate next.
 
@@ -14,12 +14,14 @@ Implemented or partially implemented:
 - LLM summarization through OpenRouter-compatible APIs.
 - Local and HTTP HaluGate validation.
 - Recursive research orchestration with Inner Loop, Iteration Loop, Branch Manager, Master Agent, Managing Agent, Reflection Agent, and hypothesis generation.
-- FastAPI product API under `src/api` with projects, sessions, branches, papers, claims, events, run controls, and durable job contracts.
+- FastAPI product API under `src/api` with projects, sessions, branches, papers, claims, evidence, events, run controls, and durable job contracts.
 - In-memory and Postgres repository implementations.
 - Initial Postgres product schema and job persistence under `migrations/`.
 - Worker adapter primitives under `src/jobs` for leasing, completing, retrying, and failing jobs.
-- Deterministic claim extraction and supplied-evidence validation scaffolds under `src/claims`.
-- Next.js web dashboard under `apps/web` for projects, session creation, session mission control, branch inspection, paper inspection, jobs, claims, and events.
+- Deterministic atomic claim extraction and supplied-evidence validation under `src/claims`.
+- Automated, inspectable evidence retrieval from persisted paper abstracts and metadata.
+- Conservative claim relation classification and safe claim-status updates through the existing verifier.
+- Next.js web dashboard under `apps/web` for projects, session control, branches, papers, jobs, claims, evidence passages, and validation traces.
 - Legacy Convex and Vite/React visualization prototypes under `convex/` and `viewer/`.
 - Typer CLI commands for search, fetch, and profile listing.
 
@@ -28,16 +30,19 @@ Not yet production-ready:
 - Research jobs are durably queued, but the Phase 3 worker contract is not yet connected to full `MasterAgent` execution.
 - The SSE stream is process-local and not resumable across API restarts.
 - No authentication or multi-user authorization boundary.
-- No automated evidence retrieval or production claim verifier.
+- Claim retrieval currently uses abstracts and metadata; full-text chunk retrieval is not exposed through the repository contract yet.
+- The deterministic lexical verifier is auditable but is not a calibrated NLI or domain-specific production verifier.
+- The existing `validations` table is not yet exposed as a first-class repository read model; validation traces currently use durable claim-validation events.
 - No production deployment of the Postgres repository and migration runner.
 - No distributed external queue infrastructure.
-- Exports, collaboration, large research maps, gap analysis, and contradiction analysis remain later roadmap phases.
+- Exports, collaboration, large research maps, gap analysis, and cross-claim contradiction analysis remain later roadmap phases.
 
 ## Product architecture
 
 ```text
 apps/web/                        Next.js product dashboard
 src/api/                         FastAPI product API
+src/claims/                      claim extraction, evidence retrieval, validation
 src/                             research core and provider integrations
 src/jobs/                        worker adapter and durable job execution boundary
 migrations/                      Postgres schema migrations
@@ -119,7 +124,9 @@ Important endpoints include:
 - `GET /papers/{paper_id}`
 - `POST /sessions/{session_id}/claims/extract`
 - `POST /claims/{claim_id}/validate`
+- `POST /claims/{claim_id}/validate/auto`
 - `GET /claims/{claim_id}/evidence`
+- `GET /claims/{claim_id}/inspection`
 - `POST /jobs/lease`, `POST /jobs/{job_id}/complete|fail`
 
 The default repository backend is process-local memory. Use `ERLA_REPOSITORY_BACKEND=postgres` with `ERLA_DATABASE_URL` for the durable repository implementation.
@@ -141,7 +148,7 @@ NEXT_PUBLIC_ERLA_API_URL=http://localhost:8000
 
 Open `http://localhost:3000/projects`.
 
-The Phase 4 dashboard provides:
+The dashboard provides:
 
 - Searchable project portfolio and project creation.
 - Project detail pages and online session creation.
@@ -149,10 +156,15 @@ The Phase 4 dashboard provides:
 - Hierarchical branch inspection with continue and prune actions.
 - Paper lists, in-session paper inspection, and paper detail pages.
 - Live event consumption through server-sent events.
-- Job status and claim-ledger panels.
+- Job status and clickable claim-ledger panels.
+- Claim inspector pages with policy status, confidence, source passages, source locators, and validation traces.
+- On-demand deterministic evidence retrieval that refuses to auto-promote speculative claims.
 - Explicit loading, empty, failure, partial-state, and disconnected-stream states.
 
-See `docs/phase4/WEB_DASHBOARD_MVP.md` for the delivered scope and current limits.
+See:
+
+- `docs/phase4/WEB_DASHBOARD_MVP.md`
+- `docs/phase5/CLAIM_VALIDATION_MVP.md`
 
 ## Verification
 
@@ -165,13 +177,16 @@ npm test
 npm run build
 ```
 
-Backend API boundary:
+Backend API and validation boundaries:
 
 ```bash
-pytest test_api_cors.py test_api.py
+python -m pytest -q \
+  test_api_cors.py \
+  test_api.py \
+  test_claim_evidence_retrieval.py
 ```
 
-A GitHub Actions workflow under `.github/workflows/phase4-dashboard.yml` runs these checks for dashboard-related pull requests.
+The GitHub Actions workflow under `.github/workflows/phase4-dashboard.yml` runs these checks for relevant pull requests.
 
 ## CLI prototype
 
@@ -195,10 +210,10 @@ The service exposes `GET /health` and `POST /validate`.
 ## Next engineering priorities
 
 1. Connect durable research jobs to the existing `MasterAgent` execution path.
-2. Persist and stream production events across processes.
-3. Add automated evidence retrieval and a production claim verifier.
-4. Add authentication and project authorization.
-5. Add branch splitting controls, claim evidence inspection, and exports.
+2. Expose persisted full-text paper chunks to evidence retrieval and add calibrated NLI verification.
+3. Materialize validation records and manual-review overrides through the repository contract.
+4. Begin Phase 6 research maps: citation graph, timeline, clustering, and foundational/recent distinctions.
+5. Add authentication and project authorization.
 6. Deploy the Postgres repository, migration runner, API, workers, and web dashboard as one coherent product system.
 
 ## Source-of-truth documents

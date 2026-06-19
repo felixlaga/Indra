@@ -124,6 +124,8 @@ export interface ClaimEvidence {
   session_id: string;
   source_type: string;
   paper_id?: string | null;
+  chunk_id?: string | null;
+  metadata_field?: string | null;
   evidence_text: string;
   relation: string;
   score?: number | null;
@@ -131,6 +133,29 @@ export interface ClaimEvidence {
   page_end?: number | null;
   section_title?: string | null;
   created_at: string;
+}
+
+export interface ClaimValidationTrace {
+  id: string;
+  status: string;
+  confidence?: number | null;
+  validator_type: string;
+  notes?: string | null;
+  evidence_ids: string[];
+  created_at: string;
+}
+
+export interface ClaimInspection {
+  claim: Claim;
+  evidence: ClaimEvidence[];
+  validations: ClaimValidationTrace[];
+  paper?: Paper | null;
+}
+
+export interface ClaimAutoValidationResult {
+  inspection: ClaimInspection;
+  candidates_considered: number;
+  evidence_retrieved: number;
 }
 
 export interface EventRecord {

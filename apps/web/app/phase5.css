@@ -1,0 +1,17 @@
+.claim-ledger-link {
+  display: grid;
+  gap: 4px;
+  color: #c8d2de;
+}
+
+.claim-ledger-link:hover {
+  color: var(--text);
+}
+
+.claim-ledger-link span {
+  color: var(--accent-strong);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

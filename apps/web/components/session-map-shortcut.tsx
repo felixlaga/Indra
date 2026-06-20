@@ -7,9 +7,15 @@ export function SessionMapShortcut() {
   const pathname = usePathname();
   const match = pathname.match(/^\/sessions\/([^/]+)$/);
   if (!match) return null;
+  const sessionId = match[1];
   return (
-    <Link className="session-map-shortcut" href={`/sessions/${match[1]}/map`}>
-      Open research map
-    </Link>
+    <div className="session-shortcuts">
+      <Link className="session-map-shortcut" href={`/sessions/${sessionId}/map`}>
+        Research map
+      </Link>
+      <Link className="session-map-shortcut" href={`/sessions/${sessionId}/advisor`}>
+        Research advisor
+      </Link>
+    </div>
   );
 }

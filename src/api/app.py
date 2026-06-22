@@ -1,4 +1,4 @@
-"""FastAPI application factory for the ERLA product API skeleton."""
+"""FastAPI application factory for the Indra product API skeleton."""
 
 from __future__ import annotations
 
@@ -17,21 +17,23 @@ from .routes import router
 _DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
 
 
+
 def _cors_origins() -> list[str]:
     """Return configured browser origins for the web dashboard."""
 
-    configured = os.getenv("ERLA_CORS_ORIGINS", _DEFAULT_CORS_ORIGINS)
+    configured = os.getenv("INDRA_CORS_ORIGINS", _DEFAULT_CORS_ORIGINS)
     return [origin.strip() for origin in configured.split(",") if origin.strip()]
 
 
+
 def create_app(repository: ProductRepository | None = None) -> FastAPI:
-    """Create the ERLA product API app."""
+    """Create the Indra product API app."""
 
     app = FastAPI(
-        title="ERLA Product API",
+        title="Indra Product API",
         version="0.1.0",
         description=(
-            "Product API for ERLA sessions, evidence, maps, advice, and exports."
+            "Product API for Indra sessions, evidence, maps, advice, and exports."
         ),
     )
     app.add_middleware(
@@ -40,7 +42,7 @@ def create_app(repository: ProductRepository | None = None) -> FastAPI:
         allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
         allow_headers=["Content-Type", "Accept"],
-        expose_headers=["Content-Disposition", "X-ERLA-Validation-Preserved"],
+        expose_headers=["Content-Disposition", "X-Indra-Validation-Preserved"],
     )
     app.state.repository = repository or create_repository()
     app.include_router(router)

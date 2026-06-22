@@ -1,4 +1,4 @@
-"""ERLA source package.
+"""Indra source package.
 
 Root exports are resolved lazily so importing lightweight packages such as
 ``src.domain`` does not initialize API clients or optional network dependencies.

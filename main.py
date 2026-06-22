@@ -1,5 +1,5 @@
 def main():
-    print("ERLA - Epistemic Research Landscape Agent")
+    print("Indra - Epistemic Research Landscape Agent")
 
 
 if __name__ == "__main__":

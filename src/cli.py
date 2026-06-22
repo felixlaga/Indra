@@ -11,10 +11,11 @@ from .config.loader import load_config, PaperSourcesConfig
 from .config.factory import create_paper_provider
 
 app = typer.Typer(
-    name="erla",
+    name="indra",
     help="Research agent for searching academic papers.",
     add_completion=False,
 )
+
 
 
 def get_paper_sources_config(
@@ -80,19 +81,19 @@ def search(
     Examples:
 
         # Search Semantic Scholar (default)
-        erla search "transformer attention"
+        indra search "transformer attention"
 
         # Search arXiv only
-        erla search "neural networks" -s arxiv
+        indra search "neural networks" -s arxiv
 
         # Search both in parallel
-        erla search "deep learning" -s semantic_scholar -s arxiv --strategy parallel
+        indra search "deep learning" -s semantic_scholar -s arxiv --strategy parallel
 
         # Search arXiv with category filter
-        erla search "LLM reasoning" -s arxiv -c cs.LG -c cs.AI
+        indra search "LLM reasoning" -s arxiv -c cs.LG -c cs.AI
 
         # Output as JSON
-        erla search "machine learning" --format json
+        indra search "machine learning" --format json
     """
     # Validate sources
     valid_sources = {"semantic_scholar", "arxiv"}
@@ -206,13 +207,13 @@ def fetch(
     Examples:
 
         # Fetch paper details
-        erla fetch arxiv:2301.00001
+        indra fetch arxiv:2301.00001
 
         # Fetch with full text extraction
-        erla fetch arxiv:2301.00001 --with-text
+        indra fetch arxiv:2301.00001 --with-text
 
         # Fetch multiple papers
-        erla fetch arxiv:2301.00001 arxiv:2302.00002 --format json
+        indra fetch arxiv:2301.00001 arxiv:2302.00002 --format json
     """
     asyncio.run(_fetch_async(paper_ids, with_text, output_format))
 
@@ -290,6 +291,7 @@ def profiles():
         typer.echo(f"    Sources: {', '.join(providers)}")
         typer.echo(f"    Strategy: {strategy}")
         typer.echo()
+
 
 
 def main():

@@ -6,12 +6,13 @@ from os import getenv
 
 from .repository import InMemoryRepository, ProductRepository, RepositoryError
 
-REPOSITORY_BACKEND_ENV = "ERLA_REPOSITORY_BACKEND"
-DATABASE_URL_ENV = "ERLA_DATABASE_URL"
+REPOSITORY_BACKEND_ENV = "INDRA_REPOSITORY_BACKEND"
+DATABASE_URL_ENV = "INDRA_DATABASE_URL"
 
 
 class RepositoryConfigurationError(RepositoryError):
     """Raised when repository backend configuration is invalid."""
+
 
 
 def create_repository(backend: str | None = None) -> ProductRepository:

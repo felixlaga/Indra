@@ -1,8 +1,8 @@
-# ERLA — Epistemic Research Landscape Agent
+# Indra — Epistemic Research Landscape Agent
 
-ERLA is an evidence-backed research navigator for scientific literature. It searches academic sources, grows branching research sessions, validates atomic claims against inspectable evidence, maps literature, surfaces uncertainty, and exports reusable research artifacts.
+Indra is an evidence-backed research navigator for scientific literature. It searches academic sources, grows branching research sessions, validates atomic claims against inspectable evidence, maps literature, surfaces uncertainty, and exports reusable research artifacts.
 
-ERLA is not primarily a generic chatbot or writing assistant. Its product surface is a research mission-control workspace for understanding a field, inspecting evidence, finding uncertainty, and leaving with useful artifacts.
+Indra is not primarily a generic chatbot or writing assistant. Its product surface is a research mission-control workspace for understanding a field, inspecting evidence, finding uncertainty, and leaving with useful artifacts.
 
 ## Implemented product phases
 
@@ -43,7 +43,7 @@ The frontend does not import the Python research core. Long-running research wor
 
 ## Installation
 
-Python 3.13 or newer is required.
+Python 3.13 or newer is required.
 
 ```bash
 uv sync
@@ -66,9 +66,9 @@ OPENROUTER_API_KEY=...
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_MODEL=anthropic/claude-3-5-sonnet
 
-ERLA_REPOSITORY_BACKEND=memory
-ERLA_DATABASE_URL=postgresql://user:password@localhost:5432/erla
-ERLA_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+INDRA_REPOSITORY_BACKEND=memory
+INDRA_DATABASE_URL=postgresql://user:password@localhost:5432/indra
+INDRA_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 
 SEMANTIC_SCHOLAR_API_KEY=...
 HALUGATE_URL=http://localhost:8000
@@ -100,7 +100,7 @@ Major endpoints:
 - `GET /claims/{claim_id}/inspection`
 - `POST /jobs/lease`, `POST /jobs/{job_id}/complete|fail`
 
-The default repository backend is process-local memory. Set `ERLA_REPOSITORY_BACKEND=postgres` and `ERLA_DATABASE_URL` for durable persistence.
+The default repository backend is process-local memory. Set `INDRA_REPOSITORY_BACKEND=postgres` and `INDRA_DATABASE_URL` for durable persistence.
 
 ## Run the dashboard
 
@@ -122,7 +122,7 @@ The dashboard includes:
 - research-advisor recommendations, contradiction and gap review, hypotheses, and weak-evidence triage;
 - export center at `/sessions/{session_id}/exports`.
 
-## Phase 8 export formats
+## Phase 8 export formats
 
 | Format | Endpoint suffix |
 |---|---|

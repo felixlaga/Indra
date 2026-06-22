@@ -1,5 +1,5 @@
 [project]
-name = "erla"
+name = "indra"
 version = "0.1.0"
 description = "Epistemic research landscape agent for recursive literature exploration, source-grounded summarization, and research navigation."
 readme = "README.md"
@@ -32,7 +32,7 @@ where = ["."]
 include = ["src*"]
 
 [project.scripts]
-erla = "src.cli:main"
+indra = "src.cli:main"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

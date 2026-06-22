@@ -8,8 +8,8 @@ import "./phase5.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "ERLA Research Navigator",
-    template: "%s · ERLA",
+    default: "Indra Research Navigator",
+    template: "%s · Indra",
   },
   description: "Evidence-backed research navigation and session mission control.",
 };

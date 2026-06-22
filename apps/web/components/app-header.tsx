@@ -9,17 +9,17 @@ interface AppHeaderProps {
 
 export function AppHeader({
   eyebrow = "Research mission control",
-  title = "ERLA",
+  title = "Indra",
   description,
   actions,
 }: AppHeaderProps) {
   return (
     <header className="app-header">
       <div className="app-header-inner">
-        <Link className="brand-lockup" href="/projects" aria-label="ERLA projects">
-          <span className="brand-mark" aria-hidden="true">E</span>
+        <Link className="brand-lockup" href="/projects" aria-label="Indra projects">
+          <span className="brand-mark" aria-hidden="true">I</span>
           <span>
-            <span className="brand-name">ERLA</span>
+            <span className="brand-name">Indra</span>
             <span className="brand-caption">Evidence-backed research navigation</span>
           </span>
         </Link>

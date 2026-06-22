@@ -1,8 +1,8 @@
-# ERLA Roadmap
+# Indra Roadmap
 
 ## Product direction
 
-ERLA should become the best research navigator and epistemic research assistant: a dashboard that maps a field, explores literature through autonomous Scouts, validates claims, detects gaps, and advises researchers on what to read and investigate next.
+Indra should become the best research navigator and epistemic research assistant: a dashboard that maps a field, explores literature through autonomous Scouts, validates claims, detects gaps, and advises researchers on what to read and investigate next.
 
 Do not build a generic AI writing assistant first.
 
@@ -13,8 +13,8 @@ Goal: remove hackathon ambiguity and make the project coherent for Codex and con
 Tasks:
 
 - Replace hackathon README with product README.
-- Rename project metadata from `ic-hack-26` to `erla`.
-- Add source-of-truth docs.
+- Rename project metadata from `ic-hack-26` to `indra`.
+- Add source‑of‑truth docs.
 - Define target architecture.
 - Define data model.
 - Define validation rules.
@@ -41,7 +41,7 @@ Build:
 - Branch endpoints.
 - Event endpoints.
 - Paper endpoints.
-- Run-control endpoints.
+- Run‑control endpoints.
 
 Do not run long research jobs synchronously in API handlers.
 
@@ -54,7 +54,7 @@ Exit criteria:
 
 ## Phase 2: Durable state
 
-Goal: replace prototype-only in-memory session state for product workflows.
+Goal: replace prototype‑only in‑memory session state for product workflows.
 
 Build:
 
@@ -93,7 +93,7 @@ Exit criteria:
 
 ## Phase 4: Web dashboard MVP
 
-Goal: remove CLI-first interaction.
+Goal: remove CLI‑first interaction.
 
 Build:
 
@@ -115,9 +115,9 @@ Exit criteria:
 - User can click papers and branches.
 - User does not need CLI.
 
-## Phase 5: Claim-level validation
+## Phase 5: Claim‑level validation
 
-Goal: turn ERLA into a trustworthy evidence engine.
+Goal: turn Indra into a trustworthy evidence engine.
 
 Build:
 
@@ -148,7 +148,7 @@ Build:
 - Cluster labels.
 - Foundational/recent paper distinction.
 - Related paper recommendations.
-- Branch-level synthesis.
+- Branch‑level synthesis.
 - Field overview.
 
 Exit criteria:
@@ -166,17 +166,17 @@ Build:
 
 - Contradiction detection.
 - Gap detection.
-- Weak-evidence detection.
-- Open-problem extraction.
+- Weak‑evidence detection.
+- Open‑problem extraction.
 - Research advisor panel.
 - Hypothesis generation improvements.
 - Hypothesis inspector.
 
 Exit criteria:
 
-- ERLA surfaces disagreements.
-- ERLA surfaces weakly covered areas.
-- ERLA recommends research directions with evidence.
+- Indra surfaces disagreements.
+- Indra surfaces weakly covered areas.
+- Indra recommends research directions with evidence.
 - Hypotheses are clearly marked as speculative.
 
 ## Phase 8: Exports
@@ -195,13 +195,36 @@ Build:
 
 Exit criteria:
 
-- User can leave ERLA with useful artifacts.
+- User can leave Indra with useful artifacts.
 - Exports preserve validation status.
 - Unsupported claims are labeled.
 
+## Phase 9: Production hardening
+
+Goal: transform Indra from a prototype into a robust production service.
+
+Build:
+
+- Connect durable research jobs to the full `MasterAgent` execution.
+- Replace process‑local SSE with resumable cross‑process event streaming.
+- Add authentication and project authorization.
+- Expose full‑text evidence retrieval and integrate calibrated verification models.
+- Deploy Postgres, migrations, API, workers and dashboard as one system with Docker.
+- Add caching for large sessions and asynchronous export jobs if session scale requires them.
+- Add metrics, structured logging and health endpoints.
+
+Exit criteria:
+
+- Long‑running jobs execute in the worker layer and update the dashboard.
+- Event streams persist across API restarts and reconnections.
+- Users authenticate and can only access their own projects.
+- Claim validation uses full text and model‑based verification.
+- The system runs in containers and scales across multiple processes.
+- Caching and asynchronous exports make large sessions responsive.
+
 ## Immediate priority order
 
-1. Upload this corrected root-level doc bundle.
+1. Upload this corrected root‑level doc bundle.
 2. Replace README and pyproject metadata.
 3. Add API skeleton.
 4. Add database schema and migrations.
@@ -220,5 +243,5 @@ Exit criteria:
 - Browser extension.
 - Complex collaboration.
 - Fancy 3D visualizations.
-- Overly broad model-provider abstraction.
+- Overly broad model‑provider abstraction.
 - Premature enterprise features.

@@ -12,7 +12,7 @@ import type {
 } from "@/lib/types";
 
 const API_URL = (
-  process.env.NEXT_PUBLIC_ERLA_API_URL ?? "http://localhost:8000"
+  process.env.NEXT_PUBLIC_INDRA_API_URL ?? "http://localhost:8000"
 ).replace(/\/$/, "");
 
 export class ApiError extends Error {
@@ -47,7 +47,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const message =
       typeof detail === "object" && detail !== null && "detail" in detail
         ? String((detail as { detail: unknown }).detail)
-        : `ERLA API request failed with status ${response.status}`;
+        : `Indra API request failed with status ${response.status}`;
     throw new ApiError(message, response.status, detail);
   }
 
@@ -57,7 +57,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export const erlaApi = {
+export const indraApi = {
   baseUrl: API_URL,
   listProjects: () => request<Project[]>("/projects"),
   getProject: (projectId: string) => request<Project>(`/projects/${projectId}`),

@@ -1,7 +1,7 @@
 import type { ResearchAdvice } from "@/lib/advice-types";
 
 const API_URL = (
-  process.env.NEXT_PUBLIC_ERLA_API_URL ?? "http://localhost:8000"
+  process.env.NEXT_PUBLIC_INDRA_API_URL ?? "http://localhost:8000"
 ).replace(/\/$/, "");
 
 export async function getResearchAdvice(sessionId: string): Promise<ResearchAdvice> {
@@ -10,7 +10,7 @@ export async function getResearchAdvice(sessionId: string): Promise<ResearchAdvi
     cache: "no-store",
   });
   if (!response.ok) {
-    let message = `ERLA API request failed with status ${response.status}`;
+    let message = `Indra API request failed with status ${response.status}`;
     try {
       const payload = (await response.json()) as { detail?: unknown };
       if (payload.detail != null) message = String(payload.detail);

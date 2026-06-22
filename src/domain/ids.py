@@ -1,4 +1,4 @@
-"""Identifier primitives for durable ERLA entities and provider IDs."""
+"""Identifier primitives for durable Indra entities and provider IDs."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ ProviderId = NewType("ProviderId", str)
 
 
 def new_uuid() -> UUID:
-    """Create a UUID4 for a durable ERLA entity."""
+    """Create a UUID4 for a durable Indra entity."""
 
     return uuid4()
 
@@ -53,11 +53,11 @@ def parse_uuid(value: str | UUID) -> UUID:
     if isinstance(value, UUID):
         return value
     if not isinstance(value, str):
-        raise ValueError("Durable ERLA IDs must be UUID strings")
+        raise ValueError("Durable Indra IDs must be UUID strings")
     try:
         return UUID(value)
     except ValueError as exc:
-        raise ValueError(f"Malformed durable ERLA UUID: {value!r}") from exc
+        raise ValueError(f"Malformed durable Indra UUID: {value!r}") from exc
 
 
 def serialize_uuid(value: str | UUID) -> str:

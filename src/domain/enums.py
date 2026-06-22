@@ -1,4 +1,4 @@
-"""Canonical ERLA enum values shared across API, runtime, and SQL."""
+"""Canonical Indra enum values shared across API, runtime, and SQL."""
 
 from __future__ import annotations
 

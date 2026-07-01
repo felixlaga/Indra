@@ -8,7 +8,7 @@ import { CreateProjectForm } from "@/components/create-project-form";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorPanel } from "@/components/error-panel";
 import { StatusBadge } from "@/components/status-badge";
-import { erlaApi } from "@/lib/api";
+import { indraApi } from "@/lib/api";
 import { formatRelativeDate, truncate } from "@/lib/format";
 import type {
   Project,
@@ -23,11 +23,11 @@ interface DashboardData {
 
 async function loadDashboardData(): Promise<DashboardData> {
   const [projects, sessions] = await Promise.all([
-    erlaApi.listProjects(),
-    erlaApi.listSessions(),
+    indraApi.listProjects(),
+    indraApi.listSessions(),
   ]);
   const snapshots = await Promise.allSettled(
-    sessions.map((session) => erlaApi.getSessionSnapshot(session.id)),
+    sessions.map((session) => indraApi.getSessionSnapshot(session.id)),
   );
   const snapshotBySession = new Map<string, SessionSnapshot>();
   snapshots.forEach((result, index) => {

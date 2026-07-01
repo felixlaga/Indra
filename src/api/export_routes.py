@@ -1,4 +1,4 @@
-"""Phase 8 research-artifact export routes."""
+"""Research-artifact export routes."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ _generator = ExportGenerator()
 
 @router.get("/sessions/{session_id}/exports", response_model=ExportCatalog)
 def list_session_exports(session_id: str, request: Request) -> ExportCatalog:
-    """Return every downloadable Phase 8 artifact for a session."""
+    """Return every downloadable research artifact for a session."""
     try:
         get_repository(request).get_session(session_id)
         return _generator.catalog(session_id)
@@ -47,7 +47,7 @@ def download_session_export(
         media_type=artifact.media_type,
         headers={
             "Content-Disposition": f'attachment; filename="{artifact.filename}"',
-            "X-ERLA-Validation-Preserved": "true",
+            "X-Indra-Validation-Preserved": "true",
             "Cache-Control": "no-store",
         },
     )

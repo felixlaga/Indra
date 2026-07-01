@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { erlaApi } from "@/lib/api";
+import { indraAuthHeaders, indraUrlWithApiKey } from "@/lib/api";
 import type { EventRecord } from "@/lib/types";
 
 interface StreamState {
@@ -45,9 +45,9 @@ export function useSessionEventStream(
     async function connect() {
       try {
         const response = await fetch(
-          `${erlaApi.baseUrl}/sessions/${sessionId}/events/stream?replay=false`,
+          indraUrlWithApiKey(`/sessions/${sessionId}/events/stream?replay=false`),
           {
-            headers: { Accept: "text/event-stream" },
+            headers: { Accept: "text/event-stream", ...indraAuthHeaders() },
             cache: "no-store",
             signal: controller.signal,
           },

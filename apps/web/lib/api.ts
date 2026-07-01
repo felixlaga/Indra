@@ -15,6 +15,22 @@ const API_URL = (
   process.env.NEXT_PUBLIC_INDRA_API_URL ?? "http://localhost:8000"
 ).replace(/\/$/, "");
 
+const API_KEY = process.env.NEXT_PUBLIC_INDRA_API_KEY?.trim();
+
+export function indraAuthHeaders(): HeadersInit {
+  return API_KEY ? { "X-Indra-API-Key": API_KEY } : {};
+}
+
+export function indraUrl(path: string): string {
+  return `${API_URL}${path}`;
+}
+
+export function indraUrlWithApiKey(path: string): string {
+  const url = new URL(indraUrl(path));
+  if (API_KEY) url.searchParams.set("api_key", API_KEY);
+  return url.toString();
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -27,11 +43,12 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(indraUrl(path), {
     ...init,
     headers: {
       Accept: "application/json",
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...indraAuthHeaders(),
       ...init?.headers,
     },
     cache: "no-store",
@@ -99,3 +116,5 @@ export const indraApi = {
       body: JSON.stringify(payload),
     }),
 };
+
+export const erlaApi = indraApi;

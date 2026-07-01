@@ -1,4 +1,4 @@
-"""FastAPI application factory for the Indra product API skeleton."""
+"""FastAPI application factory for the Indra product API."""
 
 from __future__ import annotations
 
@@ -9,13 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .claim_validation_routes import router as claim_validation_router
 from .export_routes import router as export_router
+from .health_routes import router as health_router
 from .research_map_routes import router as research_map_router
 from .repository import ProductRepository
 from .repository_factory import create_repository
 from .routes import router
+from .security import require_api_key
 
 _DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
-
 
 
 def _cors_origins() -> list[str]:
@@ -23,7 +24,6 @@ def _cors_origins() -> list[str]:
 
     configured = os.getenv("INDRA_CORS_ORIGINS", _DEFAULT_CORS_ORIGINS)
     return [origin.strip() for origin in configured.split(",") if origin.strip()]
-
 
 
 def create_app(repository: ProductRepository | None = None) -> FastAPI:
@@ -36,15 +36,22 @@ def create_app(repository: ProductRepository | None = None) -> FastAPI:
             "Product API for Indra sessions, evidence, maps, advice, and exports."
         ),
     )
+    app.middleware("http")(require_api_key)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(),
         allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
-        allow_headers=["Content-Type", "Accept"],
+        allow_headers=[
+            "Content-Type",
+            "Accept",
+            "Authorization",
+            "X-Indra-API-Key",
+        ],
         expose_headers=["Content-Disposition", "X-Indra-Validation-Preserved"],
     )
     app.state.repository = repository or create_repository()
+    app.include_router(health_router)
     app.include_router(router)
     app.include_router(claim_validation_router)
     app.include_router(research_map_router)

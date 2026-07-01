@@ -1,27 +1,33 @@
-# Indra — Epistemic Research Landscape Agent
+# Indra — Evidence-backed research navigator
 
-Indra is an evidence-backed research navigator for scientific literature. It searches academic sources, grows branching research sessions, validates atomic claims against inspectable evidence, maps literature, surfaces uncertainty, and exports reusable research artifacts.
+Indra is a research mission-control workspace for scientific literature. It searches academic sources, stores projects and sessions, exposes papers and branches, validates atomic claims against inspectable evidence, builds research maps, surfaces uncertainty, and exports reusable artifacts.
 
-Indra is not primarily a generic chatbot or writing assistant. Its product surface is a research mission-control workspace for understanding a field, inspecting evidence, finding uncertainty, and leaving with useful artifacts.
+Indra is not a generic chatbot or writing editor. Its product boundary is evidence navigation: find papers, inspect state, validate claims, understand a literature map, and export artifacts that preserve uncertainty labels.
 
-## Implemented product phases
+## Current status
+
+Indra is ready for single-owner personal professional use when run as one API process, one dashboard process, and either the in-memory backend for testing or PostgreSQL for durable work. Optional local API-key protection is available through `INDRA_API_KEY`.
+
+Enterprise features such as billing, collaboration, organization-level authorization, and multi-user account management are intentionally outside this personal deployment profile.
+
+## Capabilities
 
 - Academic search through Semantic Scholar and arXiv.
-- Composite multi-provider search with parallel, fallback, and single-source strategies.
+- Composite search strategies: single-source, parallel, and fallback.
 - PDF text extraction and OpenRouter-compatible summarization.
-- Recursive research orchestration with branches, loops, reflection, and hypothesis generation.
-- FastAPI product API with in-memory and Postgres repositories.
+- Recursive research sessions with branches, loops, reflection, and hypotheses.
+- FastAPI product API with in-memory and PostgreSQL repositories.
 - Durable background-job contracts and worker leasing primitives.
-- Next.js project and session dashboard.
+- Next.js dashboard for projects, sessions, papers, branches, claims, maps, advisor signals, and exports.
 - Atomic claim extraction, evidence retrieval, claim validation, and claim inspection.
 - Citation/reference research maps, timelines, clusters, paper roles, and related-paper recommendations.
 - Contradiction, weak-evidence, gap, open-problem, recommendation, and speculative-hypothesis analysis.
-- Phase 8 exports: BibTeX, RIS, Markdown report, LaTeX outline, annotated bibliography, claim-ledger CSV/JSON, and research-map JSON.
+- Exports: BibTeX, RIS, Markdown report, LaTeX outline, annotated bibliography, claim-ledger CSV/JSON, and research-map JSON.
 
 ## Architecture
 
 ```text
-apps/web/                        Next.js product dashboard
+apps/web/                        Next.js dashboard
 src/api/                         FastAPI product API
 src/claims/                      claim extraction, evidence retrieval, validation
 src/maps/                        research-map construction
@@ -29,7 +35,7 @@ src/analysis/                    gap, contradiction, and advisor analysis
 src/exports/                     deterministic research artifact generation
 src/jobs/                        durable worker boundary
 src/                             research core and provider integrations
-migrations/                      Postgres schema migrations
+migrations/                      PostgreSQL schema migrations
 ```
 
 Runtime boundary:
@@ -39,48 +45,67 @@ frontend -> product API -> repository/events
                        -> durable jobs/workers -> research core -> providers
 ```
 
-The frontend does not import the Python research core. Long-running research work must remain behind the durable job boundary.
+The frontend does not import the Python research core. Long-running research work stays behind the job boundary.
 
-## Installation
+## Requirements
 
-Python 3.13 or newer is required.
+- Python 3.13 or newer.
+- Node.js 20.9 or newer.
+- `uv` for the recommended Python setup.
+- PostgreSQL 16 or newer for durable sessions.
+
+## Quick start
 
 ```bash
+cp .env.example .env
 uv sync
+uvicorn src.api.app:app --reload --port 8000
 ```
 
-Alternative:
+In a second terminal:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
+cd apps/web
+cp .env.example .env.local
+npm install
+npm run dev
 ```
 
-## Environment variables
+Open `http://localhost:3000/projects`.
 
-Create a local `.env` file. Do not commit secrets.
+## Environment
+
+Root `.env`:
 
 ```bash
 OPENROUTER_API_KEY=...
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_MODEL=anthropic/claude-3-5-sonnet
-
 INDRA_REPOSITORY_BACKEND=memory
 INDRA_DATABASE_URL=postgresql://user:password@localhost:5432/indra
 INDRA_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-
-SEMANTIC_SCHOLAR_API_KEY=...
+INDRA_API_KEY=
+SEMANTIC_SCHOLAR_API_KEY=
 HALUGATE_URL=http://localhost:8000
 ```
 
-## Run the API
+Dashboard `.env.local`:
 
 ```bash
-uvicorn src.api.app:app --reload --port 8000
+NEXT_PUBLIC_INDRA_API_URL=http://localhost:8000
+NEXT_PUBLIC_INDRA_API_KEY=
 ```
 
-Major endpoints:
+Set `INDRA_REPOSITORY_BACKEND=postgres` and `INDRA_DATABASE_URL` for durable persistence. Leave `INDRA_API_KEY` empty for trusted local development. When `INDRA_API_KEY` is set, API calls require `X-Indra-API-Key` or `Authorization: Bearer`.
+
+## Health checks
+
+```bash
+curl http://localhost:8000/livez
+curl http://localhost:8000/readyz
+```
+
+## Main API routes
 
 - `POST /projects`, `GET /projects`, `GET /projects/{project_id}`
 - `POST /sessions`, `GET /sessions`, `GET /sessions/{session_id}`
@@ -100,44 +125,13 @@ Major endpoints:
 - `GET /claims/{claim_id}/inspection`
 - `POST /jobs/lease`, `POST /jobs/{job_id}/complete|fail`
 
-The default repository backend is process-local memory. Set `INDRA_REPOSITORY_BACKEND=postgres` and `INDRA_DATABASE_URL` for durable persistence.
+## Verification
 
-## Run the dashboard
+Backend:
 
 ```bash
-cd apps/web
-cp .env.example .env.local
-npm install
-npm run dev
+python -m pytest -q test_api_cors.py test_api.py test_claim_evidence_retrieval.py test_research_map.py test_research_advice.py test_exports.py
 ```
-
-Open `http://localhost:3000/projects`.
-
-The dashboard includes:
-
-- project and session workspaces;
-- session lifecycle controls and live events;
-- branch, paper, job, claim, and evidence inspectors;
-- research maps and timelines;
-- research-advisor recommendations, contradiction and gap review, hypotheses, and weak-evidence triage;
-- export center at `/sessions/{session_id}/exports`.
-
-## Phase 8 export formats
-
-| Format | Endpoint suffix |
-|---|---|
-| BibTeX | `bibtex` |
-| RIS | `ris` |
-| Markdown research report | `report-markdown` |
-| LaTeX literature-review outline | `literature-review-latex` |
-| Annotated bibliography | `annotated-bibliography` |
-| Claim ledger CSV | `claim-ledger-csv` |
-| Claim ledger JSON | `claim-ledger-json` |
-| Research map JSON | `research-map-json` |
-
-Claim-bearing exports preserve status, confidence, evidence relationships, and synthesis eligibility. Unsupported, contradicted, speculative, and unreviewed statements remain explicitly labelled.
-
-## Verification
 
 Frontend:
 
@@ -147,36 +141,6 @@ npm run typecheck
 npm test
 npm run build
 ```
-
-Backend:
-
-```bash
-python -m pytest -q \
-  test_api_cors.py \
-  test_api.py \
-  test_claim_evidence_retrieval.py \
-  test_research_map.py \
-  test_research_advice.py \
-  test_exports.py
-```
-
-Implementation notes:
-
-- `docs/phase4/WEB_DASHBOARD_MVP.md`
-- `docs/phase5/CLAIM_VALIDATION_MVP.md`
-- `docs/phase6/RESEARCH_MAPS_MVP.md`
-- `docs/phase7/RESEARCH_ADVISOR_MVP.md`
-- `docs/phase8/EXPORTS_MVP.md`
-
-## Production-hardening work still required
-
-- Connect durable research jobs to full `MasterAgent` execution.
-- Replace process-local SSE with resumable cross-process events.
-- Add authentication and project authorization.
-- Expose full-text paper chunks to evidence retrieval.
-- Add calibrated domain-specific inference where appropriate.
-- Deploy Postgres, migrations, API, workers, and dashboard as one system.
-- Add large-session caching and asynchronous export jobs if session scale requires them.
 
 ## Core rule
 

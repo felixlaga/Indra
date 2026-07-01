@@ -7,7 +7,7 @@ import { AppHeader } from "@/components/app-header";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorPanel } from "@/components/error-panel";
 import { StatusBadge } from "@/components/status-badge";
-import { erlaApi } from "@/lib/api";
+import { indraApi } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import type { ClaimInspection } from "@/lib/types";
 import {
@@ -29,7 +29,7 @@ export function ClaimPageClient({ claimId }: { claimId: string }) {
     setLoading(true);
     setError(null);
     try {
-      setInspection(await erlaApi.getClaimInspection(claimId));
+      setInspection(await indraApi.getClaimInspection(claimId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Claim could not be loaded");
     } finally {
@@ -46,7 +46,7 @@ export function ClaimPageClient({ claimId }: { claimId: string }) {
     setError(null);
     setResultNotice(null);
     try {
-      const result = await erlaApi.autoValidateClaim(claimId, {
+      const result = await indraApi.autoValidateClaim(claimId, {
         top_k: 5,
         min_score: 0.15,
         include_session_papers: true,

@@ -7,7 +7,7 @@ export function ErrorPanel({ message, onRetry }: ErrorPanelProps) {
   return (
     <div className="error-panel" role="alert">
       <div>
-        <strong>Unable to load ERLA data</strong>
+        <strong>Unable to load Indra data</strong>
         <p>{message}</p>
       </div>
       {onRetry ? (

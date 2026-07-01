@@ -7,7 +7,7 @@ import { AppHeader } from "@/components/app-header";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorPanel } from "@/components/error-panel";
 import { StatusBadge } from "@/components/status-badge";
-import { erlaApi } from "@/lib/api";
+import { indraApi } from "@/lib/api";
 import { edgeCoordinates, layoutResearchMap } from "@/lib/map-layout.js";
 import type { ResearchMap } from "@/lib/types";
 
@@ -30,7 +30,7 @@ export function ResearchMapPageClient({ sessionId }: { sessionId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const next = await erlaApi.getResearchMap(sessionId);
+      const next = await indraApi.getResearchMap(sessionId);
       setResearchMap(next);
       setSelectedPaperId((current) =>
         current && next.nodes.some((node) => node.paper_id === current)
@@ -248,54 +248,3 @@ export function ResearchMapPageClient({ sessionId }: { sessionId: string }) {
 
         <section className={styles.panel}>
           <div className={styles.panelHeader}>
-            <div><p className="eyebrow">Timeline</p><h2>Publication chronology</h2></div>
-            <span>{researchMap.timeline.length} represented years</span>
-          </div>
-          <div className={styles.timeline}>
-            {researchMap.timeline.map((bucket) => (
-              <div className={styles.yearBucket} key={bucket.year}>
-                <strong>{bucket.year}</strong>
-                <span>{bucket.paper_ids.length} paper{bucket.paper_ids.length === 1 ? "" : "s"}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className={styles.panel}>
-          <div className={styles.panelHeader}>
-            <div><p className="eyebrow">Clusters</p><h2>Thematic and branch groups</h2></div>
-          </div>
-          <div className={styles.cardGrid}>
-            {researchMap.clusters.map((cluster) => (
-              <article className={styles.card} key={cluster.id}>
-                <h3>{cluster.label}</h3>
-                <p>{cluster.paper_ids.length} paper{cluster.paper_ids.length === 1 ? "" : "s"}</p>
-                <div className={styles.tags}>
-                  {cluster.keywords.map((keyword) => <span className={styles.tag} key={keyword}>{keyword}</span>)}
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className={styles.panel}>
-          <div className={styles.panelHeader}>
-            <div><p className="eyebrow">Branch synthesis</p><h2>What each branch currently establishes</h2></div>
-          </div>
-          <div className={styles.cardGrid}>
-            {researchMap.branch_syntheses.map((synthesis) => (
-              <article className={styles.card} key={synthesis.branch_id}>
-                <h3>{synthesis.label}</h3>
-                <p>{synthesis.text}</p>
-                <div className={styles.tags}>
-                  <span className={styles.tag}>{synthesis.source.replaceAll("_", " ")}</span>
-                  {synthesis.validation_status ? <span className={styles.tag}>{synthesis.validation_status.replaceAll("_", " ")}</span> : null}
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      </main>
-    </>
-  );
-}

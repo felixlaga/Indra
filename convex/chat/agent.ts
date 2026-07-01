@@ -1,5 +1,5 @@
 /**
- * ERLA Research Chat Agent
+ * Indra Research Chat Agent
  *
  * An AI chat agent for discussing research findings with
  * HaluGate-validated, source-citing responses.
@@ -16,7 +16,7 @@ import {
 } from "./tools";
 
 // Agent instructions for research discussion
-const AGENT_INSTRUCTIONS = `You are ERLA's Research Chat Assistant - an AI that helps users understand and discuss their research findings.
+const AGENT_INSTRUCTIONS = `You are Indra's Research Chat Assistant - an AI that helps users understand and discuss their research findings.
 
 ## Your Role
 You help researchers explore, understand, and discuss papers, hypotheses, and findings from their automated literature review sessions.
@@ -68,7 +68,7 @@ const openrouter = createOpenRouter({
 
 // Create the research chat agent with an OpenRouter-hosted model
 export const researchChatAgent = new Agent(components.agent, {
-  name: "ERLA Research Chat",
+  name: "Indra Research Chat",
   languageModel: openrouter.chat(OPENROUTER_CHAT_MODEL),
   instructions: AGENT_INSTRUCTIONS,
   tools: {

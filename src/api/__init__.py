@@ -1,4 +1,4 @@
-"""Product API skeleton for ERLA.
+"""Product API skeleton for Indra.
 
 Package-level exports are lazy so importing schema or mapping modules does not
 require FastAPI to be installed or initialize an app.

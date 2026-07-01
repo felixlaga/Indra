@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { AppHeader } from "@/components/app-header";
 import { ErrorPanel } from "@/components/error-panel";
-import { erlaApi } from "@/lib/api";
+import { indraApi } from "@/lib/api";
 import { authorNames, formatDate } from "@/lib/format";
 import type { Paper } from "@/lib/types";
 
@@ -18,7 +18,7 @@ export function PaperPageClient({ paperId }: { paperId: string }) {
     setLoading(true);
     setError(null);
     try {
-      setPaper(await erlaApi.getPaper(paperId));
+      setPaper(await indraApi.getPaper(paperId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Paper could not be loaded");
     } finally {
@@ -33,7 +33,7 @@ export function PaperPageClient({ paperId }: { paperId: string }) {
   if (loading) {
     return (
       <>
-        <AppHeader title="Loading paper…" />
+        <AppHeader title="Loading paper..." />
         <main className="page-shell"><div className="detail-skeleton" /></main>
       </>
     );
@@ -53,7 +53,7 @@ export function PaperPageClient({ paperId }: { paperId: string }) {
   return (
     <>
       <AppHeader
-        eyebrow={[paper.venue, paper.year].filter(Boolean).join(" · ") || "Paper record"}
+        eyebrow={[paper.venue, paper.year].filter(Boolean).join(" - ") || "Paper record"}
         title={paper.title}
         description={authorNames(paper.authors)}
         actions={
@@ -103,9 +103,9 @@ export function PaperPageClient({ paperId }: { paperId: string }) {
               <div><dt>Venue</dt><dd>{paper.venue || "Unknown"}</dd></div>
               <div><dt>Citations</dt><dd>{paper.citation_count ?? "Unknown"}</dd></div>
               <div><dt>References</dt><dd>{paper.reference_count ?? "Unknown"}</dd></div>
-              <div><dt>DOI</dt><dd>{paper.doi || "—"}</dd></div>
-              <div><dt>arXiv</dt><dd>{paper.arxiv_id || "—"}</dd></div>
-              <div><dt>Semantic Scholar</dt><dd>{paper.semantic_scholar_id || "—"}</dd></div>
+              <div><dt>DOI</dt><dd>{paper.doi || "-"}</dd></div>
+              <div><dt>arXiv</dt><dd>{paper.arxiv_id || "-"}</dd></div>
+              <div><dt>Semantic Scholar</dt><dd>{paper.semantic_scholar_id || "-"}</dd></div>
               <div><dt>Updated</dt><dd>{formatDate(paper.updated_at)}</dd></div>
             </dl>
           </section>

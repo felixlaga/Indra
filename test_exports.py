@@ -99,7 +99,7 @@ def test_every_export_downloads_with_attachment_and_validation_header():
         response = client.get(f"/sessions/{session['id']}/exports/{format_name}")
         assert response.status_code == 200, format_name
         assert filename in response.headers["content-disposition"]
-        assert response.headers["x-erla-validation-preserved"] == "true"
+        assert response.headers["x-indra-validation-preserved"] == "true"
         assert response.text.strip(), format_name
 
 

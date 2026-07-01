@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ErrorPanel } from "@/components/error-panel";
 import { SessionCreateForm } from "@/components/session-create-form";
 import { StatusBadge } from "@/components/status-badge";
-import { erlaApi } from "@/lib/api";
+import { indraApi } from "@/lib/api";
 import { authorNames, formatDate, formatRelativeDate, truncate } from "@/lib/format";
 import type {
   Project,
@@ -33,8 +33,8 @@ export function ProjectPageClient({ projectId }: { projectId: string }) {
     setError(null);
     try {
       const [project, allSessions] = await Promise.all([
-        erlaApi.getProject(projectId),
-        erlaApi.listSessions(),
+        indraApi.getProject(projectId),
+        indraApi.listSessions(),
       ]);
       const sessions = allSessions
         .filter((session) => session.project_id === projectId)
@@ -43,7 +43,7 @@ export function ProjectPageClient({ projectId }: { projectId: string }) {
             new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime(),
         );
       const snapshotResults = await Promise.allSettled(
-        sessions.map((session) => erlaApi.getSessionSnapshot(session.id)),
+        sessions.map((session) => indraApi.getSessionSnapshot(session.id)),
       );
       const snapshots = snapshotResults
         .filter(

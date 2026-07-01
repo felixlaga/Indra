@@ -3,7 +3,7 @@
 import { ChangeEvent, FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { erlaApi } from "@/lib/api";
+import { indraApi } from "@/lib/api";
 
 interface SessionCreateFormProps {
   projectId: string;
@@ -31,7 +31,7 @@ export function SessionCreateForm({ projectId }: SessionCreateFormProps) {
     setSaving(true);
     setError(null);
     try {
-      const session = await erlaApi.createSession({
+      const session = await indraApi.createSession({
         project_id: projectId,
         initial_query: initialQuery,
         source_providers: providers,
@@ -48,7 +48,7 @@ export function SessionCreateForm({ projectId }: SessionCreateFormProps) {
     <form className="session-create-card" onSubmit={submit}>
       <div>
         <p className="eyebrow">Start a research run</p>
-        <h2>Define the question ERLA should map</h2>
+        <h2>Define the question Indra should map</h2>
       </div>
       <textarea
         value={query}
@@ -77,7 +77,7 @@ export function SessionCreateForm({ projectId }: SessionCreateFormProps) {
           type="submit"
           disabled={saving || !query.trim() || providers.length === 0}
         >
-          {saving ? "Creating session…" : "Create session"}
+          {saving ? "Creating session..." : "Create session"}
         </button>
       </div>
     </form>

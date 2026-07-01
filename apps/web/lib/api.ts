@@ -116,5 +116,3 @@ export const indraApi = {
       body: JSON.stringify(payload),
     }),
 };
-
-export const erlaApi = indraApi;

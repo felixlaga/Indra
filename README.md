@@ -20,7 +20,7 @@ Indra is not primarily a generic chatbot or writing assistant. Its product surfa
 
 ## Architecture
 
-```text
+```
 apps/web/                        Next.js product dashboard
 src/api/                         FastAPI product API
 src/claims/                      claim extraction, evidence retrieval, validation
@@ -34,7 +34,7 @@ migrations/                      Postgres schema migrations
 
 Runtime boundary:
 
-```text
+```
 frontend -> product API -> repository/events
                        -> durable jobs/workers -> research core -> providers
 ```
@@ -73,6 +73,19 @@ INDRA_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 SEMANTIC_SCHOLAR_API_KEY=...
 HALUGATE_URL=http://localhost:8000
 ```
+
+### Variable summary
+
+| Variable | Description | Example |
+| --- | --- | --- |
+| `OPENROUTER_API_KEY` | API key for the OpenRouter provider | `sk-…` |
+| `OPENROUTER_BASE_URL` | Base URL for the OpenRouter API | `https://openrouter.ai/api/v1` |
+| `OPENROUTER_MODEL` | Model name used with OpenRouter | `anthropic/claude-3-5-sonnet` |
+| `INDRA_REPOSITORY_BACKEND` | Storage backend: use `memory` for in‑memory sessions or `postgres` for durable storage | `memory` |
+| `INDRA_DATABASE_URL` | Connection string used when `INDRA_REPOSITORY_BACKEND=postgres` | `postgresql://user:password@localhost:5432/indra` |
+| `INDRA_CORS_ORIGINS` | Comma‑separated list of allowed origins for the API | `http://localhost:3000` |
+| `SEMANTIC_SCHOLAR_API_KEY` | Optional key enabling higher Semantic Scholar request quotas | `api-key` |
+| `HALUGATE_URL` | URL of the HALUGate service for PDF retrieval | `http://localhost:8000` |
 
 ## Run the API
 
@@ -122,14 +135,56 @@ The dashboard includes:
 - research-advisor recommendations, contradiction and gap review, hypotheses, and weak-evidence triage;
 - export center at `/sessions/{session_id}/exports`.
 
+## Quick start workflow
+
+Here is a small example illustrating how to create a project, run a research session and inspect its state using the API.  These examples assume the API server is running on `http://localhost:8000`:
+
+1. Create a new project:
+
+```bash
+curl -X POST http://localhost:8000/projects \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "Example project"}'
+```
+
+This returns a JSON object containing the new `project_id`.
+
+2. Launch a research session within that project:
+
+```bash
+curl -X POST http://localhost:8000/sessions \
+  -H 'Content-Type: application/json' \
+  -d '{"project_id": "<PROJECT_ID>", "query": "What is the role of quantum entanglement in photosynthesis?"}'
+```
+
+Record the returned `session_id`.
+
+3. Monitor session state:
+
+```bash
+curl http://localhost:8000/sessions/<SESSION_ID>/state
+```
+
+Once the session has progressed, you can extract and validate claims or view research maps:
+
+```bash
+# extract claims
+curl -X POST http://localhost:8000/sessions/<SESSION_ID>/claims/extract
+
+# validate a specific claim
+curl -X POST http://localhost:8000/claims/<CLAIM_ID>/validate
+```
+
+This quick start demonstrates the core workflow: create a project, start a session, follow its progress, and interact with claims and evidence.
+
 ## Phase 8 export formats
 
 | Format | Endpoint suffix |
-|---|---|
+| --- | --- |
 | BibTeX | `bibtex` |
 | RIS | `ris` |
 | Markdown research report | `report-markdown` |
-| LaTeX literature-review outline | `literature-review-latex` |
+| LaTeX literature‑review outline | `literature-review-latex` |
 | Annotated bibliography | `annotated-bibliography` |
 | Claim ledger CSV | `claim-ledger-csv` |
 | Claim ledger JSON | `claim-ledger-json` |

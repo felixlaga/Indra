@@ -76,7 +76,7 @@ Open `http://localhost:3000/projects`.
 1. Create a project.
 2. Create a research session with an initial query.
 3. Start the session.
-4. Run a worker or persist results through the API.
+4. Starting a session queues a research job. No worker executes these jobs yet, so sessions do not gather papers on their own.
 5. Inspect branches, papers, events, jobs, and claims.
 6. Open the research map and advisor panels.
 7. Export a BibTeX bibliography, Markdown report, LaTeX outline, annotated bibliography, claim ledger, or research-map JSON.

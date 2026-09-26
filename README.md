@@ -85,7 +85,7 @@ HALUGATE_URL=http://localhost:8000
 | `INDRA_DATABASE_URL` | Connection string used when `INDRA_REPOSITORY_BACKEND=postgres` | `postgresql://user:password@localhost:5432/indra` |
 | `INDRA_CORS_ORIGINS` | Comma‑separated list of allowed origins for the API | `http://localhost:3000` |
 | `SEMANTIC_SCHOLAR_API_KEY` | Optional key enabling higher Semantic Scholar request quotas | `api-key` |
-| `HALUGATE_URL` | URL of the HALUGate service for PDF retrieval | `http://localhost:8000` |
+| `HALUGATE_URL` | URL of the HaluGate hallucination-detection service used by the CLI research pipeline | `http://localhost:8000` |
 
 ## Run the API
 
@@ -144,38 +144,45 @@ Here is a small example illustrating how to create a project, run a research ses
 ```bash
 curl -X POST http://localhost:8000/projects \
   -H 'Content-Type: application/json' \
-  -d '{"name": "Example project"}'
+  -d '{"title": "Example project"}'
 ```
 
-This returns a JSON object containing the new `project_id`.
+This returns the new project; its `id` is the project ID.
 
-2. Launch a research session within that project:
+2. Create a research session within that project:
 
 ```bash
 curl -X POST http://localhost:8000/sessions \
   -H 'Content-Type: application/json' \
-  -d '{"project_id": "<PROJECT_ID>", "query": "What is the role of quantum entanglement in photosynthesis?"}'
+  -d '{"project_id": "<PROJECT_ID>", "initial_query": "What is the role of quantum coherence in photosynthesis?"}'
 ```
 
-Record the returned `session_id`.
+The returned `id` is the session ID. New sessions are `pending`.
 
-3. Monitor session state:
+3. Start the session and monitor its state:
 
 ```bash
+curl -X POST http://localhost:8000/sessions/<SESSION_ID>/start
 curl http://localhost:8000/sessions/<SESSION_ID>/state
 ```
 
-Once the session has progressed, you can extract and validate claims or view research maps:
+Starting a session queues a `research_session` job. No worker processes these jobs yet (see "Production-hardening work still required"), so the session stays `running` with no papers until one exists.
+
+4. Extract claims from text and validate one against the session's papers:
 
 ```bash
-# extract claims
-curl -X POST http://localhost:8000/sessions/<SESSION_ID>/claims/extract
+# extract atomic claims
+curl -X POST http://localhost:8000/sessions/<SESSION_ID>/claims/extract \
+  -H 'Content-Type: application/json' \
+  -d '{"source_text": "Quantum coherence persists for hundreds of femtoseconds in the FMO complex."}'
 
-# validate a specific claim
-curl -X POST http://localhost:8000/claims/<CLAIM_ID>/validate
+# retrieve evidence and validate one claim
+curl -X POST http://localhost:8000/claims/<CLAIM_ID>/validate/auto \
+  -H 'Content-Type: application/json' \
+  -d '{}'
 ```
 
-This quick start demonstrates the core workflow: create a project, start a session, follow its progress, and interact with claims and evidence.
+When `INDRA_API_KEY` is set, add `-H "X-Indra-API-Key: <key>"` to every request.
 
 ## Phase 8 export formats
 

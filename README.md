@@ -84,6 +84,9 @@ HALUGATE_URL=http://localhost:8000
 | `INDRA_REPOSITORY_BACKEND` | Storage backend: use `memory` for in‑memory sessions or `postgres` for durable storage | `memory` |
 | `INDRA_DATABASE_URL` | Connection string used when `INDRA_REPOSITORY_BACKEND=postgres` | `postgresql://user:password@localhost:5432/indra` |
 | `INDRA_CORS_ORIGINS` | Comma‑separated list of allowed origins for the API | `http://localhost:3000` |
+| `INDRA_API_KEY` | Optional API key for trusted local deployments; dashboard requests must use the same value | `local-key` |
+| `NEXT_PUBLIC_INDRA_API_KEY` | Dashboard API key in `apps/web/.env.local`; embedded in the browser bundle, so this is not a multi-user authentication system | `local-key` |
+| `SEMANTIC_SCHOLAR_BASE_URL` | Optional provider endpoint; defaults to the public Graph API | `https://api.semanticscholar.org/graph/v1` |
 | `SEMANTIC_SCHOLAR_API_KEY` | Optional key enabling higher Semantic Scholar request quotas | `api-key` |
 | `HALUGATE_URL` | URL of the HaluGate hallucination-detection service used by the CLI research pipeline | `http://localhost:8000` |
 
@@ -120,7 +123,7 @@ The default repository backend is process-local memory. Set `INDRA_REPOSITORY_BA
 ```bash
 cd apps/web
 cp .env.example .env.local
-npm install
+npm ci
 npm run dev
 ```
 
@@ -213,13 +216,7 @@ npm run build
 Backend:
 
 ```bash
-python -m pytest -q \
-  test_api_cors.py \
-  test_api.py \
-  test_claim_evidence_retrieval.py \
-  test_research_map.py \
-  test_research_advice.py \
-  test_exports.py
+python -m pytest -q
 ```
 
 Implementation notes:

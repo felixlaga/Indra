@@ -1,11 +1,11 @@
 name: CI
 
-# Runs on every pull request and every push to main, with no path filters,
+# Runs on every pull request and pushes to main or stabilization branches,
 # so a change anywhere cannot skip the checks.
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "indra-phase-0-*"]
 
 jobs:
   frontend:
@@ -19,8 +19,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/web/package.json
-      - run: npm install --no-audit --no-fund
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

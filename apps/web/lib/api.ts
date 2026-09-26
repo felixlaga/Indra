@@ -62,11 +62,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    let detail: unknown;
+    // Read the body once: json() consumes it even when parsing fails.
+    const body = await response.text();
+    let detail: unknown = body;
     try {
-      detail = await response.json();
+      detail = JSON.parse(body);
     } catch {
-      detail = await response.text();
+      // Keep non-JSON details while retaining the HTTP status below.
     }
     const message =
       typeof detail === "object" && detail !== null && "detail" in detail

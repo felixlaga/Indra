@@ -16,7 +16,9 @@ logging.basicConfig(
 
 # Semantic Scholar
 SEMANTIC_SCHOLAR_API_KEY = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
-SEMANTIC_SCHOLAR_BASE_URL = os.getenv("SEMANTIC_SCHOLAR_BASE_URL")
+SEMANTIC_SCHOLAR_BASE_URL = os.getenv(
+    "SEMANTIC_SCHOLAR_BASE_URL", "https://api.semanticscholar.org/graph/v1"
+)
 
 # OpenRouter
 # Available models via OpenRouter:

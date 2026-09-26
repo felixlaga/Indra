@@ -14,7 +14,7 @@ import type {
   ResearchAdvice,
   ResearchGap,
 } from "@/lib/advice-types";
-import { getResearchAdvice } from "@/lib/advice-api";
+import { indraApi } from "@/lib/api";
 
 import styles from "./research-advisor-page.module.css";
 
@@ -157,7 +157,7 @@ export function ResearchAdvisorPageClient({ sessionId }: { sessionId: string }) 
     setLoading(true);
     setError(null);
     try {
-      setAdvice(await getResearchAdvice(sessionId));
+      setAdvice(await indraApi.getResearchAdvice(sessionId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Research advice could not be loaded");
     } finally {

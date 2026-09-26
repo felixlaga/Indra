@@ -1,3 +1,5 @@
+import type { ResearchAdvice } from "@/lib/advice-types";
+import type { ExportCatalog } from "@/lib/export-types";
 import type {
   Branch,
   ClaimAutoValidationResult,
@@ -29,6 +31,11 @@ export function indraUrlWithApiKey(path: string): string {
   const url = new URL(indraUrl(path));
   if (API_KEY) url.searchParams.set("api_key", API_KEY);
   return url.toString();
+}
+
+/** Plain links cannot send headers, so downloads carry the key as a query parameter. */
+export function exportDownloadUrl(sessionId: string, format: string): string {
+  return indraUrlWithApiKey(`/sessions/${sessionId}/exports/${format}`);
 }
 
 export class ApiError extends Error {
@@ -93,6 +100,10 @@ export const indraApi = {
     request<SessionSnapshot>(`/sessions/${sessionId}/state`),
   getResearchMap: (sessionId: string) =>
     request<ResearchMap>(`/sessions/${sessionId}/map`),
+  getResearchAdvice: (sessionId: string) =>
+    request<ResearchAdvice>(`/sessions/${sessionId}/analysis`),
+  getExportCatalog: (sessionId: string) =>
+    request<ExportCatalog>(`/sessions/${sessionId}/exports`),
   runSessionAction: (
     sessionId: string,
     action: "start" | "pause" | "resume" | "cancel",

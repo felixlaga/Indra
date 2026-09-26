@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppHeader } from "@/components/app-header";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorPanel } from "@/components/error-panel";
-import { exportDownloadUrl, getExportCatalog } from "@/lib/export-api";
+import { exportDownloadUrl, indraApi } from "@/lib/api";
 import type { ExportCatalog, ExportDescriptor } from "@/lib/export-types";
 
 import styles from "./export-center-page.module.css";
@@ -65,7 +65,7 @@ export function ExportCenterPageClient({ sessionId }: { sessionId: string }) {
     setLoading(true);
     setError(null);
     try {
-      setCatalog(await getExportCatalog(sessionId));
+      setCatalog(await indraApi.getExportCatalog(sessionId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Export catalog could not be loaded");
     } finally {

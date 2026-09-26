@@ -157,57 +157,6 @@ wheels = [
 ]
 
 [[package]]
-name = "erla"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "arxiv" },
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "lettucedetect" },
-    { name = "openai" },
-    { name = "psycopg", extra = ["binary"] },
-    { name = "pydantic" },
-    { name = "pymupdf" },
-    { name = "python-dotenv" },
-    { name = "pyyaml" },
-    { name = "torch" },
-    { name = "transformers" },
-    { name = "typer" },
-    { name = "uvicorn" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "arxiv", specifier = ">=2.1" },
-    { name = "fastapi", specifier = ">=0.115" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "lettucedetect", specifier = ">=0.1.8" },
-    { name = "openai", specifier = ">=1.0" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
-    { name = "pydantic", specifier = ">=2.0" },
-    { name = "pymupdf", specifier = ">=1.24" },
-    { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "torch", specifier = ">=2.0" },
-    { name = "transformers", specifier = ">=4.40" },
-    { name = "typer", specifier = ">=0.9" },
-    { name = "uvicorn", specifier = ">=0.34" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=9.0.2" },
-    { name = "pytest-asyncio", specifier = ">=1.3.0" },
-]
-
-[[package]]
 name = "fastapi"
 version = "0.128.0"
 source = { registry = "https://pypi.org/simple" }
@@ -346,6 +295,57 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6f/6d/0703ccc57f3a7233505399edb88de3cbd678da106337b9fcde432b65ed60/idna-3.11.tar.gz", hash = "sha256:795dafcc9c04ed0c1fb032c2aa73654d8e8c5023a7df64a53f39190ada629902", size = 194582, upload-time = "2025-10-12T14:55:20.501Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0e/61/66938bbb5fc52dbdf84594873d5b51fb1f7c7794e9c0f5bd885f30bc507b/idna-3.11-py3-none-any.whl", hash = "sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea", size = 71008, upload-time = "2025-10-12T14:55:18.883Z" },
+]
+
+[[package]]
+name = "indra"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "arxiv" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "lettucedetect" },
+    { name = "openai" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pydantic" },
+    { name = "pymupdf" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "torch" },
+    { name = "transformers" },
+    { name = "typer" },
+    { name = "uvicorn" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "arxiv", specifier = ">=2.1" },
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "lettucedetect", specifier = ">=0.1.8" },
+    { name = "openai", specifier = ">=1.0" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pymupdf", specifier = ">=1.24" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "torch", specifier = ">=2.0" },
+    { name = "transformers", specifier = ">=4.40" },
+    { name = "typer", specifier = ">=0.9" },
+    { name = "uvicorn", specifier = ">=0.34" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-asyncio", specifier = ">=1.3.0" },
 ]
 
 [[package]]

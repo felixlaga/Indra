@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from queue import Empty
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -482,38 +481,30 @@ async def stream_session_events(
 
     repository = get_repository(request)
     try:
-        subscription = repository.subscribe_events(
-            session_id,
-            replay_existing=replay,
-        )
+        initial = repository.list_events(session_id)
     except RepositoryError as exc:
         handle_repository_error(exc)
         raise
-
-    wait_seconds = min(max(heartbeat_seconds, 0.1), 60.0)
+    cursor = request.headers.get("last-event-id") or request.query_params.get("cursor")
+    ids = [event.id for event in initial]
+    if cursor in ids:
+        initial = initial[ids.index(cursor) + 1:]
+    elif not replay and not cursor:
+        initial = []
+    seen = set(ids) - {event.id for event in initial}
+    wait_seconds = min(max(heartbeat_seconds, 0.1), 2.0)
 
     async def event_generator():
-        try:
-            for event in subscription.replay_events:
-                if await request.is_disconnected():
-                    return
-                yield format_sse_event(event)
-
-            while True:
-                if await request.is_disconnected():
-                    return
-                try:
-                    event = await asyncio.to_thread(
-                        subscription.queue.get,
-                        True,
-                        wait_seconds,
-                    )
-                except Empty:
-                    yield format_sse_comment("keep-alive")
-                    continue
-                yield format_sse_event(event)
-        finally:
-            repository.unsubscribe_events(subscription)
+        pending = initial
+        while not await request.is_disconnected():
+            for event in pending:
+                if event.id not in seen:
+                    seen.add(event.id)
+                    yield format_sse_event(event)
+            yield format_sse_comment("keep-alive")
+            await asyncio.sleep(wait_seconds)
+            # Poll durable rows: worker and API need not share process-local queues.
+            pending = await asyncio.to_thread(repository.list_events, session_id)
 
     return StreamingResponse(
         event_generator(),
@@ -524,3 +515,12 @@ async def stream_session_events(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/papers/{paper_id}/chunks")
+def get_paper_chunks(paper_id: str, request: Request):
+    try:
+        return get_repository(request).list_paper_chunks(paper_id)
+    except RepositoryError as exc:
+        handle_repository_error(exc)
+        raise

@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ErrorPanel } from "@/components/error-panel";
 import { StatusBadge } from "@/components/status-badge";
 import { useSessionEventStream } from "@/hooks/use-session-event-stream";
-import { erlaApi } from "@/lib/api";
+import { indraApi } from "@/lib/api";
 import { authorNames, formatDate, truncate } from "@/lib/format";
 import { buildBranchTree } from "@/lib/tree.js";
 import type {
@@ -90,9 +90,10 @@ function EventLog({ events }: { events: EventRecord[] }) {
           <div>
             <strong>{event.event_type.replaceAll("_", " ")}</strong>
             <p>
-              {Object.keys(event.payload).length
-                ? JSON.stringify(event.payload)
-                : "No additional payload"}
+              {typeof event.payload.message === "string" ? event.payload.message
+                : typeof event.payload.title === "string" ? event.payload.title
+                : typeof event.payload.error === "string" ? event.payload.error
+                : "Recorded in the session history"}
             </p>
           </div>
         </article>
@@ -228,7 +229,7 @@ function BranchInspector({
             className="button button-primary button-small"
             type="button"
             onClick={onContinue}
-            disabled={busy || branch.status === "pruned" || branch.status === "failed"}
+            disabled={busy || !["pending", "paused", "failed"].includes(branch.status)}
           >
             Continue branch
           </button>
@@ -305,7 +306,7 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
     if (showLoading) setLoading(true);
     setError(null);
     try {
-      const next = await erlaApi.getSessionSnapshot(sessionId);
+      const next = await indraApi.getSessionSnapshot(sessionId);
       setSnapshot(next);
       setSelectedBranchId((current) => {
         if (current && next.branches.some((branch) => branch.id === current)) return current;
@@ -353,7 +354,7 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
     setBusy(true);
     setError(null);
     try {
-      await erlaApi.runSessionAction(sessionId, action);
+      await indraApi.runSessionAction(sessionId, action);
       await load(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : `Unable to ${action} session`);
@@ -367,8 +368,8 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
     setBusy(true);
     setError(null);
     try {
-      if (action === "continue") await erlaApi.continueBranch(selectedBranch.id);
-      else await erlaApi.pruneBranch(selectedBranch.id);
+      if (action === "continue") await indraApi.continueBranch(selectedBranch.id);
+      else await indraApi.pruneBranch(selectedBranch.id);
       await load(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : `Unable to ${action} branch`);
@@ -390,6 +391,9 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
   if (!snapshot) return null;
 
   const session = snapshot.session;
+  const activeJob = [...snapshot.jobs].reverse().find((job) => ["running", "queued"].includes(job.status));
+  const lastJob = activeJob ?? snapshot.jobs.at(-1);
+  const progressMessage = typeof lastJob?.result.message === "string" ? lastJob.result.message : null;
   return (
     <main className="session-dashboard">
       <header className="session-topbar">
@@ -409,8 +413,8 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
         </div>
         <div className="run-controls">
           <StatusBadge status={session.status} />
-          {session.status === "pending" ? (
-            <button className="button button-primary button-small" type="button" onClick={() => void runAction("start")} disabled={busy}>Start</button>
+          {["pending", "failed"].includes(session.status) ? (
+            <button className="button button-primary button-small" type="button" onClick={() => void runAction("start")} disabled={busy}>{session.status === "failed" ? "Retry" : "Start"}</button>
           ) : null}
           {session.status === "running" ? (
             <button className="button button-secondary button-small" type="button" onClick={() => void runAction("pause")} disabled={busy}>Pause</button>
@@ -426,6 +430,11 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
 
       {error ? <div className="dashboard-error"><ErrorPanel message={error} /></div> : null}
 
+      <div className="research-progress" role="status" aria-live="polite">
+        {activeJob?.status === "queued" ? "Queued — waiting for a research worker. If this persists, check that the worker process is running."
+          : progressMessage || (session.status === "pending" ? "Ready to start research." : `Session ${session.status}.`)}
+        {lastJob?.result.verification_mode === "retrieval_only" ? " Claims require review; no verification model is configured." : ""}
+      </div>
       <div className="dashboard-grid">
         <aside className="dashboard-sidebar">
           <section className="sidebar-section">

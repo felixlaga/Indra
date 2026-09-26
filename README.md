@@ -64,7 +64,7 @@ Create a local `.env` file. Do not commit secrets.
 ```bash
 OPENROUTER_API_KEY=...
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODEL=anthropic/claude-3-5-sonnet
+OPENROUTER_MODEL=
 
 INDRA_REPOSITORY_BACKEND=memory
 INDRA_DATABASE_URL=postgresql://user:password@localhost:5432/indra
@@ -80,7 +80,7 @@ HALUGATE_URL=http://localhost:8000
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | API key for the OpenRouter provider | `sk-…` |
 | `OPENROUTER_BASE_URL` | Base URL for the OpenRouter API | `https://openrouter.ai/api/v1` |
-| `OPENROUTER_MODEL` | Model name used with OpenRouter | `anthropic/claude-3-5-sonnet` |
+| `OPENROUTER_MODEL` | Explicit model with structured-output support; required when enabling model verification | Select a supported model ID |
 | `INDRA_REPOSITORY_BACKEND` | Storage backend: use `memory` for in‑memory sessions or `postgres` for durable storage | `memory` |
 | `INDRA_DATABASE_URL` | Connection string used when `INDRA_REPOSITORY_BACKEND=postgres` | `postgresql://user:password@localhost:5432/indra` |
 | `INDRA_CORS_ORIGINS` | Comma‑separated list of allowed origins for the API | `http://localhost:3000` |
@@ -117,6 +117,10 @@ Major endpoints:
 - `POST /jobs/lease`, `POST /jobs/{job_id}/complete|fail`
 
 The default repository backend is process-local memory. Set `INDRA_REPOSITORY_BACKEND=postgres` and `INDRA_DATABASE_URL` for durable persistence.
+
+## Run the research worker
+
+The API and standalone worker must use the same Postgres database. Initialize it with `python -m src.api.migrate` (or `--without-vectors` on Postgres without pgvector), then run `python -m src.jobs.research_worker`. See [Phase 1](docs/research/PHASE_1.md) for bounds, failure recovery, and verification details.
 
 ## Run the dashboard
 
@@ -169,7 +173,7 @@ curl -X POST http://localhost:8000/sessions/<SESSION_ID>/start
 curl http://localhost:8000/sessions/<SESSION_ID>/state
 ```
 
-Starting a session queues a `research_session` job. No worker processes these jobs yet (see "Production-hardening work still required"), so the session stays `running` with no papers until one exists.
+Starting a session queues one `research_session` job. Run `python -m src.jobs.research_worker` in a separate terminal with the same Postgres configuration as the API. The worker searches, persists selected papers and PDF passages, extracts claims, and completes the session. See [Phase 1 setup and verification](docs/research/PHASE_1.md). Without a model key, claims remain explicitly unreviewed.
 
 4. Extract claims from text and validate one against the session's papers:
 
@@ -229,10 +233,10 @@ Implementation notes:
 
 ## Production-hardening work still required
 
-- Connect durable research jobs to full `MasterAgent` execution.
-- Replace process-local SSE with resumable cross-process events.
+- Expand the bounded product worker into recursive Scout and hypothesis orchestration.
+- Scale the resumable durable-event polling transport with pagination and LISTEN/NOTIFY.
 - Add authentication and project authorization.
-- Expose full-text paper chunks to evidence retrieval.
+- Add dense/vector retrieval and scanned-document handling beyond page-numbered PDF text.
 - Add calibrated domain-specific inference where appropriate.
 - Deploy Postgres, migrations, API, workers, and dashboard as one system.
 - Add large-session caching and asynchronous export jobs if session scale requires them.

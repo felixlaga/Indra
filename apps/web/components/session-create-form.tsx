@@ -12,7 +12,7 @@ interface SessionCreateFormProps {
 export function SessionCreateForm({ projectId }: SessionCreateFormProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [providers, setProviders] = useState<string[]>(["semantic_scholar", "arxiv"]);
+  const [providers, setProviders] = useState<string[]>(["arxiv"]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

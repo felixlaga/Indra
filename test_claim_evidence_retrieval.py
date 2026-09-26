@@ -47,7 +47,7 @@ def _seed_paper(
     return paper
 
 
-def test_retriever_supports_and_contradicts_only_with_strong_overlap():
+def test_retriever_ranks_passages_without_inventing_semantic_verdicts():
     retriever = EvidenceRetriever()
     support = retriever.retrieve(
         "The paper introduces a retrieval method for evidence navigation.",
@@ -61,8 +61,8 @@ def test_retriever_supports_and_contradicts_only_with_strong_overlap():
             )
         ],
     )
-    assert support[0].relation == "supports"
-    assert support[0].score == 1.0
+    assert support[0].relation == "mentions"
+    assert support[0].retrieval_score == 1.0
 
     contradiction = retriever.retrieve(
         "The method does not improve accuracy.",
@@ -74,7 +74,7 @@ def test_retriever_supports_and_contradicts_only_with_strong_overlap():
             )
         ],
     )
-    assert contradiction[0].relation == "contradicts"
+    assert contradiction[0].relation == "mentions"
 
 
 def test_retriever_discards_unrelated_passages():
@@ -129,11 +129,11 @@ def test_auto_validation_stores_evidence_and_exposes_trace():
     assert response.status_code == 200
     result = response.json()
     inspection = result["inspection"]
-    assert inspection["claim"]["status"] == "supported"
+    assert inspection["claim"]["status"] == "needs_review"
     assert result["candidates_considered"] >= 4
     assert result["evidence_retrieved"] >= 1
     assert inspection["evidence"][0]["source_type"] == "paper_abstract"
-    assert inspection["evidence"][0]["relation"] == "supports"
+    assert inspection["evidence"][0]["relation"] == "mentions"
     assert inspection["validations"][0]["validator_type"] == "claim_evidence"
     assert inspection["paper"]["id"] == paper.id
 

@@ -5,6 +5,7 @@ import type {
   ClaimAutoValidationResult,
   ClaimInspection,
   Paper,
+  PaperChunk,
   Project,
   ProjectCreate,
   ResearchMap,
@@ -117,6 +118,7 @@ export const indraApi = {
     request<Branch>(`/branches/${branchId}/continue`, { method: "POST" }),
   pruneBranch: (branchId: string) =>
     request<Branch>(`/branches/${branchId}/prune`, { method: "POST" }),
+  getPaperChunks: (paperId: string) => request<PaperChunk[]>(`/papers/${paperId}/chunks`),
   getPaper: (paperId: string) => request<Paper>(`/papers/${paperId}`),
   getClaimInspection: (claimId: string) =>
     request<ClaimInspection>(`/claims/${claimId}/inspection`),

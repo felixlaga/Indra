@@ -494,3 +494,8 @@ button { color: inherit; }
   .event-row { grid-template-columns: 7px 1fr; }
   .event-row time { display: none; }
 }
+
+.research-progress { padding: 10px 20px; color: var(--muted); border-bottom: 1px solid var(--line-soft); font-size: 12px; }
+.paper-passage { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+.paper-passage summary { cursor: pointer; font-size: 13px; }
+.paper-passage p { white-space: pre-wrap; line-height: 1.6; }

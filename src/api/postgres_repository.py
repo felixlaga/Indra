@@ -43,6 +43,7 @@ from .models import (
 )
 from .repository import ConflictError, EventSubscription, NotFoundError, utc_now
 from .research_loop import ResearchLoopBridge
+from .research_postgres import PostgresResearchWrites
 
 ConnectionFactory = Callable[[], ContextManager[Any]]
 
@@ -65,7 +66,7 @@ def _jsonb(value: Any) -> Any:
     return Jsonb(value)
 
 
-class PostgresRepository:
+class PostgresRepository(PostgresResearchWrites):
     """Durable repository using the Phase 2 Postgres schema."""
 
     def __init__(
@@ -430,25 +431,30 @@ class PostgresRepository:
     ) -> ResearchSession:
         pending_events: list[InsertedEvent] = []
         with self._connect() as conn:
-            session = self._get_session(conn, session_id)
+            session = _session_from_row(self._fetch_one(conn, "SELECT * FROM research_sessions WHERE id = %s FOR UPDATE", (session_id,)))
             self._validate_session_transition(session.status, status)
+            if session.status == status:
+                return session
             row = self._fetch_one(
                 conn,
                 """
                 UPDATE research_sessions
                 SET status = %s,
+                    failure_reason = NULL,
                     started_at = CASE
                       WHEN %s = 'running' AND started_at IS NULL THEN now()
                       ELSE started_at
                     END,
                     completed_at = CASE
                       WHEN %s IN ('completed', 'cancelled', 'failed') THEN now()
+                      WHEN %s = 'running' THEN NULL
                       ELSE completed_at
                     END
                 WHERE id = %s
                 RETURNING *
                 """,
                 (
+                    status.value,
                     status.value,
                     status.value,
                     status.value,
@@ -463,7 +469,7 @@ class PostgresRepository:
                     """
                     UPDATE branches
                     SET status = 'running', failure_reason = NULL
-                    WHERE session_id = %s AND status IN ('pending', 'paused')
+                    WHERE session_id = %s AND status IN ('pending', 'paused', 'failed')
                     """,
                     (session_id,),
                 )
@@ -533,6 +539,13 @@ class PostgresRepository:
         pending_events: list[InsertedEvent] = []
         with self._connect() as conn:
             branch = self._get_branch(conn, branch_id)
+            self._fetch_one(conn, "SELECT id FROM research_sessions WHERE id=%s FOR UPDATE", (branch.session_id,))
+            branch = self._get_branch(conn, branch_id)
+            if self._get_session(conn, branch.session_id).status != SessionStatus.RUNNING:
+                raise ConflictError("Start or resume the session before continuing a branch")
+            active = self._fetch_optional(conn, "SELECT id FROM jobs WHERE branch_id=%s AND status IN ('queued','running','paused')", (branch_id,))
+            if active:
+                return branch
             self._validate_branch_transition(branch.status, BranchStatus.RUNNING)
             row = self._fetch_one(
                 conn,
@@ -616,6 +629,7 @@ class PostgresRepository:
         pending_events: list[InsertedEvent] = []
         with self._connect() as conn:
             branch = self._get_branch(conn, branch_id)
+            self._fetch_one(conn, "SELECT id FROM research_sessions WHERE id=%s FOR UPDATE", (branch.session_id,))
             self._validate_branch_transition(branch.status, BranchStatus.PRUNED)
             row = self._fetch_one(
                 conn,
@@ -629,6 +643,7 @@ class PostgresRepository:
                 (branch_id,),
             )
             branch = _branch_from_row(row)
+            self._execute(conn, "UPDATE jobs SET status='cancelled',locked_by=NULL,locked_at=NULL,completed_at=now() WHERE branch_id=%s AND status IN ('queued','running','paused')", (branch_id,))
             pending_events.append(
                 self._insert_event(
                     conn,
@@ -784,7 +799,7 @@ class PostgresRepository:
     ) -> ClaimValidationResult:
         pending_events: list[InsertedEvent] = []
         with self._connect() as conn:
-            claim = self._get_claim(conn, claim_id)
+            claim = _claim_from_row(self._fetch_one(conn, "SELECT * FROM claims WHERE id = %s FOR UPDATE", (claim_id,)))
             evidence_items: list[ClaimEvidence] = []
             for evidence_payload in payload.evidence:
                 stored_paper_id = None
@@ -836,7 +851,7 @@ class PostgresRepository:
                         relation=evidence.relation.value,
                         score=evidence.score,
                     )
-                    for evidence in evidence_items
+                    for evidence in self._list_claim_evidence(conn, claim_id, claim.session_id)
                 ]
             )
             row = self._fetch_one(
@@ -1571,7 +1586,7 @@ def _paper_from_row(row: dict) -> Paper:
         openalex_id=row.get("openalex_id"),
         title=row["title"],
         abstract=row.get("abstract"),
-        authors=[],
+        authors=list(row.get("authors") or (row.get("metadata") or {}).get("authors", [])),
         year=row.get("year"),
         venue=row.get("venue"),
         citation_count=row.get("citation_count"),
@@ -1614,7 +1629,7 @@ def _summary_from_row(row: dict) -> Summary:
         groundedness_score=row.get("groundedness_score"),
         validation_status=row["validation_status"],
         validation_details=dict(row.get("validation_details") or {}),
-        generation_provenance=provenance,
+        generation_provenance=provenance.model_dump(mode="json") if provenance else None,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

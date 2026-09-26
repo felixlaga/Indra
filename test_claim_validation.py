@@ -45,5 +45,5 @@ def test_claim_verifier_does_not_promote_mentions():
         ]
     )
 
-    assert decision.status == "not_found"
-    assert decision.confidence == 0.0
+    assert decision.status == "needs_review"
+    assert decision.confidence is None

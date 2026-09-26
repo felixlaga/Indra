@@ -41,11 +41,13 @@ export function useSessionEventStream(
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
+    let cursor: string | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     async function connect() {
       try {
         const response = await fetch(
-          indraUrlWithApiKey(`/sessions/${sessionId}/events/stream?replay=false`),
+          indraUrlWithApiKey(`/sessions/${sessionId}/events/stream?${cursor ? `cursor=${encodeURIComponent(cursor)}` : "replay=true"}`),
           {
             headers: { Accept: "text/event-stream", ...indraAuthHeaders() },
             cache: "no-store",
@@ -62,14 +64,17 @@ export function useSessionEventStream(
         let buffer = "";
         while (!cancelled) {
           const { value, done } = await reader.read();
-          if (done) break;
+          if (done) throw new Error("Event stream closed; reconnecting");
           buffer += decoder.decode(value, { stream: true });
           let boundary = buffer.indexOf("\n\n");
           while (boundary >= 0) {
             const frame = buffer.slice(0, boundary);
             buffer = buffer.slice(boundary + 2);
             const event = parseFrame(frame);
-            if (event) callbackRef.current(event);
+            if (event) {
+              cursor = event.id;
+              callbackRef.current(event);
+            }
             boundary = buffer.indexOf("\n\n");
           }
         }
@@ -77,6 +82,7 @@ export function useSessionEventStream(
         if (controller.signal.aborted || cancelled) return;
         const message = error instanceof Error ? error.message : "Event stream disconnected";
         setState({ connected: false, error: message });
+        retryTimer = setTimeout(() => void connect(), 2000);
       }
     }
 
@@ -84,6 +90,7 @@ export function useSessionEventStream(
     return () => {
       cancelled = true;
       controller.abort();
+      if (retryTimer) clearTimeout(retryTimer);
     };
   }, [sessionId]);
 

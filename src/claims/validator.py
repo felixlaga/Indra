@@ -48,11 +48,10 @@ class ClaimVerifier:
                 confidence=self._max_score(evidence, "weakly_supports"),
             )
 
-        mentions_score = self._max_score(evidence, "mentions")
-        if mentions_score is not None:
+        if self._has_relation(evidence, "mentions"):
             return ClaimValidationDecision(
-                status="not_found",
-                confidence=mentions_score,
+                status="needs_review",
+                confidence=None,
             )
 
         return ClaimValidationDecision(

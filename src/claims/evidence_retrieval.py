@@ -1,8 +1,7 @@
 """Deterministic, inspectable evidence retrieval for atomic claims.
 
-This module deliberately avoids model inference. It ranks persisted source passages by
-lexical coverage and labels the relation using conservative, documented thresholds.
-The result is review-ready evidence, not a claim of semantic proof.
+This module only ranks source passages. Semantic judgments belong to the verifier;
+word overlap never implies support, contradiction, or factual confidence.
 """
 
 from __future__ import annotations
@@ -134,11 +133,7 @@ class EvidenceRetriever:
             if retrieval_score < min_score:
                 continue
 
-            relation, relation_score = self._relation(
-                claim_terms=claim_terms,
-                evidence_terms=evidence_terms,
-                coverage=coverage,
-            )
+            relation, relation_score = "mentions", 0.0
             ranked.append(
                 RetrievedEvidence(
                     candidate=candidate,
@@ -159,25 +154,6 @@ class EvidenceRetriever:
             reverse=True,
         )
         return ranked[:top_k]
-
-    def _relation(
-        self,
-        *,
-        claim_terms: set[str],
-        evidence_terms: set[str],
-        coverage: float,
-    ) -> tuple[str, float]:
-        claim_negated = bool(claim_terms & _NEGATIONS)
-        evidence_negated = bool(evidence_terms & _NEGATIONS)
-        if coverage >= 0.55 and claim_negated != evidence_negated:
-            return "contradicts", min(1.0, 0.35 + 0.65 * coverage)
-        if coverage >= 0.72:
-            return "supports", coverage
-        if coverage >= 0.45:
-            return "weakly_supports", coverage
-        if coverage >= 0.25:
-            return "mentions", coverage
-        return "insufficient", coverage
 
     def _terms(self, text: str) -> set[str]:
         normalized = text.lower().replace("’", "'")

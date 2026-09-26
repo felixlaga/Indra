@@ -302,3 +302,14 @@ export interface ProjectMetrics {
   activeSessionCount: number;
   updatedAt: string;
 }
+
+export interface PaperChunk {
+  id: string;
+  paper_id: string;
+  document_id: string;
+  chunk_index: number;
+  text: string;
+  page_start: number | null;
+  page_end: number | null;
+  section_title: string | null;
+}

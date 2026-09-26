@@ -6,7 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from queue import Queue
-from threading import Lock
+from threading import RLock
 from typing import TYPE_CHECKING, Protocol
 
 from ..claims import ClaimExtractor, ClaimVerifier, EvidenceInput
@@ -45,6 +45,7 @@ from .models import (
     Summary,
 )
 from .research_loop import ResearchLoopBridge
+from .research_memory import MemoryResearchWrites
 
 if TYPE_CHECKING:
     from ..orchestration.models import LoopState
@@ -73,6 +74,18 @@ class EventSubscription:
 
 class ProductRepository(Protocol):
     """Repository contract required by the product API routes."""
+
+    def heartbeat_research(self, leased: Job, progress: dict | None = None) -> Job: ...
+
+    def save_research_paper(self, leased: Job, result) -> str: ...
+
+    def list_paper_chunks(self, paper_id: str) -> list: ...
+
+    def validate_research_claim(self, leased: Job, claim_id: str, payload: ClaimValidationRequest) -> ClaimValidationResult: ...
+
+    def finish_research(self, leased: Job) -> Job: ...
+
+    def fail_research(self, leased: Job, error: str, retryable: bool = True) -> Job: ...
 
     def create_project(self, payload: ProjectCreate) -> Project: ...
 
@@ -174,7 +187,7 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class InMemoryRepository:
+class InMemoryRepository(MemoryResearchWrites):
     """Process-local repository used until durable storage is added."""
 
     def __init__(
@@ -187,6 +200,7 @@ class InMemoryRepository:
         self._sessions: dict[str, ResearchSession] = {}
         self._branches: dict[str, Branch] = {}
         self._papers: dict[str, Paper] = {}
+        self._paper_chunks = {}
         self._session_papers: dict[str, SessionPaper] = {}
         self._summaries: dict[str, Summary] = {}
         self._claims: dict[str, Claim] = {}
@@ -199,7 +213,7 @@ class InMemoryRepository:
         self._loop_bridge = loop_bridge or ResearchLoopBridge()
         self._claim_extractor = claim_extractor or ClaimExtractor()
         self._claim_verifier = claim_verifier or ClaimVerifier()
-        self._lock = Lock()
+        self._lock = RLock()
 
     def create_project(self, payload: ProjectCreate) -> Project:
         """Create a project."""
@@ -462,9 +476,14 @@ class InMemoryRepository:
         with self._lock:
             session = self._get_session_unlocked(session_id)
             self._validate_session_transition(session.status, status)
+            if session.status == status:
+                return session
 
             now = utc_now()
             session.status = status
+            if status == SessionStatus.RUNNING:
+                session.completed_at = None
+                session.failure_reason = None
             session.updated_at = now
             if status == SessionStatus.RUNNING and session.started_at is None:
                 session.started_at = now
@@ -478,7 +497,7 @@ class InMemoryRepository:
 
             if status == SessionStatus.RUNNING:
                 for branch in self._list_branches_unlocked(session.id):
-                    if branch.status in {BranchStatus.PENDING, BranchStatus.PAUSED}:
+                    if branch.status in {BranchStatus.PENDING, BranchStatus.PAUSED, BranchStatus.FAILED}:
                         branch.status = BranchStatus.RUNNING
                         branch.updated_at = now
                         self._branches[branch.id] = branch
@@ -541,7 +560,11 @@ class InMemoryRepository:
 
         with self._lock:
             branch = self._get_branch_unlocked(branch_id)
+            if self._get_session_unlocked(branch.session_id).status != SessionStatus.RUNNING:
+                raise ConflictError("Start or resume the session before continuing a branch")
             self._validate_branch_transition(branch.status, BranchStatus.RUNNING)
+            if any(job.branch_id == branch_id and job.status in {JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.PAUSED} for job in self._jobs.values()):
+                return branch
 
             branch.status = BranchStatus.RUNNING
             branch.failure_reason = None
@@ -610,6 +633,11 @@ class InMemoryRepository:
             branch.prune_reason = branch.prune_reason or "Pruned through API request."
             branch.updated_at = utc_now()
             self._branches[branch.id] = branch
+            for job in self._list_jobs_unlocked(branch.session_id):
+                if job.branch_id == branch.id and job.status in {JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.PAUSED}:
+                    job.status = JobStatus.CANCELLED
+                    job.locked_by = job.locked_at = None
+                    job.completed_at = utc_now()
             self._create_event_unlocked(
                 session_id=branch.session_id,
                 branch_id=branch.id,
@@ -767,7 +795,7 @@ class InMemoryRepository:
                         relation=evidence.relation.value,
                         score=evidence.score,
                     )
-                    for evidence in evidence_items
+                    for evidence in self._list_claim_evidence_unlocked(claim_id)
                 ]
             )
             claim.status = ClaimStatus(decision.status)

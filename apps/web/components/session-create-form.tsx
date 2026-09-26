@@ -71,7 +71,7 @@ export function SessionCreateForm({ projectId }: SessionCreateFormProps) {
       </div>
       {error ? <p className="form-error">{error}</p> : null}
       <div className="session-create-footer">
-        <p>Runs are queued through the Phase 3 job contract; API requests remain non-blocking.</p>
+        <p>The session opens on its dashboard, where you can start the run.</p>
         <button
           className="button button-primary"
           type="submit"

@@ -918,7 +918,7 @@ class PostgresRepository:
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "Postgres backend requires psycopg. Run dependency installation "
-                "before using ERLA_REPOSITORY_BACKEND=postgres."
+                "before using INDRA_REPOSITORY_BACKEND=postgres."
             ) from exc
         return psycopg.connect(self._dsn, row_factory=dict_row)
 

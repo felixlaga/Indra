@@ -105,8 +105,8 @@ export function ExportCenterPageClient({ sessionId }: { sessionId: string }) {
   return (
     <>
       <AppHeader
-        eyebrow="Phase 8 exports"
-        title="Leave ERLA with reusable research artifacts"
+        eyebrow="Research exports"
+        title="Leave Indra with reusable research artifacts"
         description="Download bibliographies, reports, literature-review outlines, claim ledgers, and the complete research map. Claim-bearing artifacts preserve validation status and explicitly label unsupported output."
         actions={
           <div className="button-row">

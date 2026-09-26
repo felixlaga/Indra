@@ -427,7 +427,7 @@ class ResearchAdviceBuilder:
             text=(
                 f"The current session contains {len(contradictions)} contradiction signals, "
                 f"{len(weak_evidence)} weak-evidence claims, and {len(gaps)} processing or "
-                f"evidence gaps. ERLA derived {len(open_problems)} open-problem signals and "
+                f"evidence gaps. Indra derived {len(open_problems)} open-problem signals and "
                 f"{len(hypotheses)} explicitly speculative hypothesis proposals."
             ),
             contradiction_count=len(contradictions),

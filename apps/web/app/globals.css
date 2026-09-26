@@ -83,7 +83,6 @@ button { color: inherit; }
 .brand-caption { display: block; color: var(--muted-2); font-size: 11px; margin-top: 1px; }
 .primary-nav { display: flex; align-items: center; gap: 22px; font-size: 13px; color: var(--muted); }
 .primary-nav a:hover { color: var(--text); }
-.nav-disabled { opacity: .45; cursor: default; }
 .page-heading {
   min-height: 170px;
   padding: 36px 0 42px;

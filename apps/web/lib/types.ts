@@ -203,7 +203,7 @@ export interface SessionSnapshot {
   branches: Branch[];
   jobs: Job[];
   papers: SessionPaperView[];
-  summaries: unknown[];
+  summaries: Summary[];
   claims: Claim[];
   claim_evidence: ClaimEvidence[];
   events: EventRecord[];
@@ -233,7 +233,12 @@ export interface ResearchMapEdge {
   id: string;
   source_paper_id: string;
   target_paper_id: string;
-  edge_type: "cites" | "referenced_by" | "related" | "same_author" | "methodologically_related";
+  edge_type:
+    | "cites"
+    | "referenced_by"
+    | "related"
+    | "same_author"
+    | "methodologically_related";
   observed: boolean;
   score?: number | null;
   provenance: string;
@@ -312,4 +317,16 @@ export interface PaperChunk {
   page_start: number | null;
   page_end: number | null;
   section_title: string | null;
+}
+
+export interface Summary {
+  id: string;
+  session_id: string;
+  branch_id?: string | null;
+  paper_id?: string | null;
+  summary_type: string;
+  text: string;
+  validation_status: string;
+  created_at: string;
+  updated_at: string;
 }

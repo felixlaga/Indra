@@ -120,7 +120,7 @@ The default repository backend is process-local memory. Set `INDRA_REPOSITORY_BA
 
 ## Run the research worker
 
-The API and standalone worker must use the same Postgres database. Initialize it with `python -m src.api.migrate` (or `--without-vectors` on Postgres without pgvector), then run `python -m src.jobs.research_worker`. See [Phase 1](docs/research/PHASE_1.md) for bounds, failure recovery, and verification details.
+The API and standalone worker must use the same Postgres database. Initialize it with `python -m src.api.migrate` (or `--without-vectors` on Postgres without pgvector), then run `python -m src.jobs.research_worker`. See [Phase 1](docs/research/PHASE_1.md) for bounds, failure recovery, and verification details. The [Phase 2 session hub](docs/research/PHASE_2.md) adds research views, linked evidence inspectors and the full claim ledger.
 
 ## Run the dashboard
 

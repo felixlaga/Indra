@@ -1,0 +1,58 @@
+name: CI
+
+# Runs on every pull request and pushes to main or stabilization branches,
+# so a change anywhere cannot skip the checks.
+on:
+  pull_request:
+  push:
+    branches: [main, "indra-phase-*"]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: indra
+          POSTGRES_PASSWORD: indra
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U indra -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      INDRA_TEST_ADMIN_DSN: postgresql://indra:indra@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: API imports and registers its core routes
+        run: >-
+          uv run python -c "from src.api import create_app;
+          paths = {route.path for route in create_app().routes};
+          missing = {'/projects', '/sessions', '/sessions/{session_id}/state'} - paths;
+          assert not missing, f'missing routes: {missing}'"
+      - name: Run the full test suite
+        run: uv run pytest -q

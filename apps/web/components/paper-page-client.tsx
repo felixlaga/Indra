@@ -7,9 +7,10 @@ import { AppHeader } from "@/components/app-header";
 import { ErrorPanel } from "@/components/error-panel";
 import { indraApi } from "@/lib/api";
 import { authorNames, formatDate } from "@/lib/format";
-import type { Paper } from "@/lib/types";
+import type { Paper, PaperChunk } from "@/lib/types";
 
 export function PaperPageClient({ paperId }: { paperId: string }) {
+  const [chunks, setChunks] = useState<PaperChunk[]>([]);
   const [paper, setPaper] = useState<Paper | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +19,9 @@ export function PaperPageClient({ paperId }: { paperId: string }) {
     setLoading(true);
     setError(null);
     try {
-      setPaper(await indraApi.getPaper(paperId));
+      const [record, passages] = await Promise.all([indraApi.getPaper(paperId), indraApi.getPaperChunks(paperId)]);
+      setPaper(record);
+      setChunks(passages);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Paper could not be loaded");
     } finally {
@@ -82,9 +85,9 @@ export function PaperPageClient({ paperId }: { paperId: string }) {
                 <p>Durably identified by the API canonical key.</p>
               </div>
               <div>
-                <span className={`evidence-indicator${paper.pdf_url || paper.open_access_pdf_url ? " is-ready" : ""}`} aria-hidden="true" />
+                <span className={`evidence-indicator${chunks.length ? " is-ready" : ""}`} aria-hidden="true" />
                 <strong>Full text</strong>
-                <p>{paper.pdf_url || paper.open_access_pdf_url ? "A PDF location is available." : "No PDF location is stored."}</p>
+                <p>{chunks.length ? `${chunks.length} source passages are available below.` : "No full text was retrieved. Claims may rely on abstract-only coverage."}</p>
               </div>
               <div>
                 <span className="evidence-indicator" aria-hidden="true" />
@@ -93,6 +96,13 @@ export function PaperPageClient({ paperId }: { paperId: string }) {
               </div>
             </div>
           </div>
+          {chunks.length ? <div className="content-section">
+            <div className="section-heading"><h2>Source passages</h2></div>
+            {chunks.map((chunk) => <details className="paper-passage" key={chunk.id}>
+              <summary>{chunk.page_start ? `Page ${chunk.page_start}` : "Source passage"} · Passage {chunk.chunk_index + 1}</summary>
+              <p>{chunk.text}</p>
+            </details>)}
+          </div> : null}
         </section>
         <aside className="paper-detail-sidebar">
           <section className="content-section">

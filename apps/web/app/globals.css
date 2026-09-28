@@ -83,7 +83,6 @@ button { color: inherit; }
 .brand-caption { display: block; color: var(--muted-2); font-size: 11px; margin-top: 1px; }
 .primary-nav { display: flex; align-items: center; gap: 22px; font-size: 13px; color: var(--muted); }
 .primary-nav a:hover { color: var(--text); }
-.nav-disabled { opacity: .45; cursor: default; }
 .page-heading {
   min-height: 170px;
   padding: 36px 0 42px;
@@ -255,7 +254,10 @@ button { color: inherit; }
 .error-panel strong { color: #ffc0c0; font-size: 13px; }
 .error-panel p { margin: 3px 0 0; color: #dca7a7; font-size: 12px; }
 
-.modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgba(4,7,10,.76); backdrop-filter: blur(8px); }
+/* Native modal dialogs escape the header's backdrop-filter containing block. */
+.modal-backdrop { position: fixed; inset: 0; width: 100%; max-width: none; height: 100%; max-height: none; margin: 0; border: 0; padding: 20px; overflow: auto; color: var(--text); background: transparent; }
+.modal-backdrop[open] { display: grid; place-items: safe center; }
+.modal-backdrop::backdrop { background: rgba(4,7,10,.76); backdrop-filter: blur(8px); }
 .modal-card { width: min(590px, 100%); border: 1px solid var(--line); border-radius: 14px; background: #111720; box-shadow: var(--shadow); }
 .modal-header { padding: 20px; display: flex; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line-soft); }
 .modal-header h2 { margin: 5px 0 0; font-size: 21px; }
@@ -492,3 +494,8 @@ button { color: inherit; }
   .event-row { grid-template-columns: 7px 1fr; }
   .event-row time { display: none; }
 }
+
+.research-progress { padding: 10px 20px; color: var(--muted); border-bottom: 1px solid var(--line-soft); font-size: 12px; }
+.paper-passage { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+.paper-passage summary { cursor: pointer; font-size: 13px; }
+.paper-passage p { white-space: pre-wrap; line-height: 1.6; }

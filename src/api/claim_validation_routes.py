@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request
 
 from ..claims import EvidenceCandidate, EvidenceRetriever, split_passages
+from ..claims.semantic_verifier import judge_passage
+from ..research.model import ResearchModel
 from .claim_validation_models import (
     ClaimAutoValidationRequest,
     ClaimAutoValidationResult,
     ClaimInspection,
     ClaimValidationTrace,
 )
-from .models import ClaimEvidenceCreate, ClaimStatus, ClaimValidationRequest
+from .models import ClaimStatus, ClaimValidationRequest
 from .repository import RepositoryError
 from .routes import get_repository, handle_repository_error
 
@@ -21,8 +23,19 @@ router = APIRouter()
 _retriever = EvidenceRetriever()
 
 
-def _paper_candidates(paper) -> list[EvidenceCandidate]:
-    candidates: list[EvidenceCandidate] = []
+def _paper_candidates(paper, chunks=()) -> list[EvidenceCandidate]:
+    candidates: list[EvidenceCandidate] = [
+        EvidenceCandidate(
+            source_type="paper_chunk",
+            paper_id=paper.id,
+            chunk_id=chunk.id,
+            evidence_text=chunk.text,
+            page_start=chunk.page_start,
+            page_end=chunk.page_end,
+            section_title=chunk.section_title,
+        )
+        for chunk in chunks
+    ]
     if paper.abstract:
         for passage in split_passages(paper.abstract):
             candidates.append(
@@ -69,9 +82,13 @@ def _inspection(repository, claim_id: str) -> ClaimInspection:
                 id=event.id,
                 status=str(event.payload.get("status", claim.status.value)),
                 confidence=float(confidence) if confidence is not None else None,
-                validator_type=str(event.payload.get("validator_type", "claim_evidence")),
+                validator_type=str(
+                    event.payload.get("validator_type", "claim_evidence")
+                ),
                 notes=event.payload.get("notes"),
-                evidence_ids=[str(item) for item in event.payload.get("evidence_ids", [])],
+                evidence_ids=[
+                    str(item) for item in event.payload.get("evidence_ids", [])
+                ],
                 created_at=event.created_at,
             )
         )
@@ -95,101 +112,78 @@ def inspect_claim(claim_id: str, request: Request) -> ClaimInspection:
         raise
 
 
+async def validate_automatically(
+    repository, claim_id, payload, model=None, leased=None
+):
+    claim = repository.get_claim(claim_id)
+    if (
+        claim.status == ClaimStatus.SPECULATIVE
+        or claim.claim_type.value == "hypothesis"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Speculative or hypothesis claims are not automatically promoted. They require explicit evidence or manual review.",
+        )
+    entries = repository.list_papers(claim.session_id)
+    if not payload.include_session_papers:
+        own_id = repository.get_paper(claim.paper_id).id if claim.paper_id else None
+        entries = [entry for entry in entries if entry.paper_id == own_id]
+    candidates = [
+        candidate
+        for entry in entries
+        for candidate in _paper_candidates(
+            entry.paper, repository.list_paper_chunks(entry.paper.id)
+        )
+    ]
+    retrieved = _retriever.retrieve(
+        claim.claim_text, candidates, top_k=payload.top_k, min_score=payload.min_score
+    )
+    evidence, judgments = [], []
+    for item in retrieved:
+        decision, trace = await judge_passage(claim.claim_text, item, model)
+        evidence.append(decision)
+        judgments.append(trace)
+    request = ClaimValidationRequest(
+        evidence=evidence,
+        validator_type="claim_evidence",
+        notes=json.dumps(
+            {
+                "strategy": "structured_evidence_judge_v1"
+                if model
+                else "retrieval_only",
+                "candidates_considered": len(candidates),
+                "judgments": judgments,
+            },
+            sort_keys=True,
+        ),
+    )
+    if leased:
+        repository.validate_research_claim(leased, claim_id, request)
+    else:
+        repository.validate_claim(claim_id, request)
+    return ClaimAutoValidationResult(
+        inspection=_inspection(repository, claim_id),
+        candidates_considered=len(candidates),
+        evidence_retrieved=len(retrieved),
+    )
+
+
 @router.post(
-    "/claims/{claim_id}/validate/auto",
-    response_model=ClaimAutoValidationResult,
+    "/claims/{claim_id}/validate/auto", response_model=ClaimAutoValidationResult
 )
-def auto_validate_claim(
-    claim_id: str,
-    payload: ClaimAutoValidationRequest,
-    request: Request,
-) -> ClaimAutoValidationResult:
-    """Retrieve evidence from persisted paper records and validate one claim.
-
-    This endpoint uses conservative lexical retrieval. It never treats model inference
-    as evidence and does not auto-promote speculative or hypothesis claims.
-    """
-
-    repository = get_repository(request)
+async def auto_validate_claim(
+    claim_id: str, payload: ClaimAutoValidationRequest, request: Request
+):
+    """Retrieve persisted passages, then judge or explicitly leave them for review."""
     try:
-        claim = repository.get_claim(claim_id)
-        if claim.status == ClaimStatus.SPECULATIVE or claim.claim_type.value == "hypothesis":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "Speculative or hypothesis claims are not automatically promoted. "
-                    "They require explicit evidence or manual review."
-                ),
-            )
-
-        session_papers = repository.list_papers(claim.session_id)
-        if claim.paper_id:
-            canonical_paper = repository.get_paper(claim.paper_id)
-            session_papers = [
-                entry for entry in session_papers if entry.paper_id == canonical_paper.id
-            ]
-        elif not payload.include_session_papers:
-            session_papers = []
-
-        candidates = [
-            candidate
-            for entry in session_papers
-            for candidate in _paper_candidates(entry.paper)
-        ]
-        retrieved = _retriever.retrieve(
-            claim.claim_text,
-            candidates,
-            top_k=payload.top_k,
-            min_score=payload.min_score,
+        model = ResearchModel.from_environment()
+        return await validate_automatically(
+            get_repository(request), claim_id, payload, model
         )
-        evidence_payloads = [
-            ClaimEvidenceCreate(
-                evidence_text=item.candidate.evidence_text,
-                relation=item.relation,
-                source_type=item.candidate.source_type,
-                paper_id=item.candidate.paper_id,
-                chunk_id=item.candidate.chunk_id,
-                metadata_field=item.candidate.metadata_field,
-                reviewer_id=None,
-                score=item.score,
-                page_start=item.candidate.page_start,
-                page_end=item.candidate.page_end,
-                section_title=item.candidate.section_title,
-            )
-            for item in retrieved
-        ]
-        trace = {
-            "strategy": "lexical_evidence_retriever_v1",
-            "top_k": payload.top_k,
-            "min_score": payload.min_score,
-            "candidates_considered": len(candidates),
-            "retrieved": [
-                {
-                    "paper_id": item.candidate.paper_id,
-                    "source_type": item.candidate.source_type,
-                    "relation": item.relation,
-                    "score": item.score,
-                    "retrieval_score": item.retrieval_score,
-                    "overlap_terms": list(item.overlap_terms),
-                }
-                for item in retrieved
-            ],
-        }
-        repository.validate_claim(
-            claim_id,
-            ClaimValidationRequest(
-                evidence=evidence_payloads,
-                validator_type="claim_evidence",
-                notes=json.dumps(trace, sort_keys=True),
-            ),
-        )
-        return ClaimAutoValidationResult(
-            inspection=_inspection(repository, claim_id),
-            candidates_considered=len(candidates),
-            evidence_retrieved=len(retrieved),
-        )
-    except HTTPException:
-        raise
     except RepositoryError as exc:
         handle_repository_error(exc)
         raise
+    except HTTPException:
+        raise
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

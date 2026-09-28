@@ -12,14 +12,14 @@ from src.api.repository import InMemoryRepository, utc_now
 
 
 FORMATS = {
-    "bibtex": "erla-bibliography.bib",
-    "ris": "erla-bibliography.ris",
-    "report-markdown": "erla-research-report.md",
-    "literature-review-latex": "erla-literature-review.tex",
-    "annotated-bibliography": "erla-annotated-bibliography.md",
-    "claim-ledger-csv": "erla-claim-ledger.csv",
-    "claim-ledger-json": "erla-claim-ledger.json",
-    "research-map-json": "erla-research-map.json",
+    "bibtex": "indra-bibliography.bib",
+    "ris": "indra-bibliography.ris",
+    "report-markdown": "indra-research-report.md",
+    "literature-review-latex": "indra-literature-review.tex",
+    "annotated-bibliography": "indra-annotated-bibliography.md",
+    "claim-ledger-csv": "indra-claim-ledger.csv",
+    "claim-ledger-json": "indra-claim-ledger.json",
+    "research-map-json": "indra-research-map.json",
 }
 
 

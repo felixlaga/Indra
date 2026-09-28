@@ -1,8 +1,11 @@
+import type { ResearchAdvice } from "@/lib/advice-types";
+import type { ExportCatalog } from "@/lib/export-types";
 import type {
   Branch,
   ClaimAutoValidationResult,
   ClaimInspection,
   Paper,
+  PaperChunk,
   Project,
   ProjectCreate,
   ResearchMap,
@@ -31,6 +34,11 @@ export function indraUrlWithApiKey(path: string): string {
   return url.toString();
 }
 
+/** Plain links cannot send headers, so downloads carry the key as a query parameter. */
+export function exportDownloadUrl(sessionId: string, format: string): string {
+  return indraUrlWithApiKey(`/sessions/${sessionId}/exports/${format}`);
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -55,11 +63,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    let detail: unknown;
+    // Read the body once: json() consumes it even when parsing fails.
+    const body = await response.text();
+    let detail: unknown = body;
     try {
-      detail = await response.json();
+      detail = JSON.parse(body);
     } catch {
-      detail = await response.text();
+      // Keep non-JSON details while retaining the HTTP status below.
     }
     const message =
       typeof detail === "object" && detail !== null && "detail" in detail
@@ -93,6 +103,10 @@ export const indraApi = {
     request<SessionSnapshot>(`/sessions/${sessionId}/state`),
   getResearchMap: (sessionId: string) =>
     request<ResearchMap>(`/sessions/${sessionId}/map`),
+  getResearchAdvice: (sessionId: string) =>
+    request<ResearchAdvice>(`/sessions/${sessionId}/analysis`),
+  getExportCatalog: (sessionId: string) =>
+    request<ExportCatalog>(`/sessions/${sessionId}/exports`),
   runSessionAction: (
     sessionId: string,
     action: "start" | "pause" | "resume" | "cancel",
@@ -104,6 +118,7 @@ export const indraApi = {
     request<Branch>(`/branches/${branchId}/continue`, { method: "POST" }),
   pruneBranch: (branchId: string) =>
     request<Branch>(`/branches/${branchId}/prune`, { method: "POST" }),
+  getPaperChunks: (paperId: string) => request<PaperChunk[]>(`/papers/${paperId}/chunks`),
   getPaper: (paperId: string) => request<Paper>(`/papers/${paperId}`),
   getClaimInspection: (claimId: string) =>
     request<ClaimInspection>(`/claims/${claimId}/inspection`),

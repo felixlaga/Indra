@@ -64,7 +64,7 @@ Create a local `.env` file. Do not commit secrets.
 ```bash
 OPENROUTER_API_KEY=...
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODEL=anthropic/claude-3-5-sonnet
+OPENROUTER_MODEL=
 
 INDRA_REPOSITORY_BACKEND=memory
 INDRA_DATABASE_URL=postgresql://user:password@localhost:5432/indra
@@ -80,12 +80,15 @@ HALUGATE_URL=http://localhost:8000
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | API key for the OpenRouter provider | `sk-…` |
 | `OPENROUTER_BASE_URL` | Base URL for the OpenRouter API | `https://openrouter.ai/api/v1` |
-| `OPENROUTER_MODEL` | Model name used with OpenRouter | `anthropic/claude-3-5-sonnet` |
+| `OPENROUTER_MODEL` | Explicit model with structured-output support; required when enabling model verification | Select a supported model ID |
 | `INDRA_REPOSITORY_BACKEND` | Storage backend: use `memory` for in‑memory sessions or `postgres` for durable storage | `memory` |
 | `INDRA_DATABASE_URL` | Connection string used when `INDRA_REPOSITORY_BACKEND=postgres` | `postgresql://user:password@localhost:5432/indra` |
 | `INDRA_CORS_ORIGINS` | Comma‑separated list of allowed origins for the API | `http://localhost:3000` |
+| `INDRA_API_KEY` | Optional API key for trusted local deployments; dashboard requests must use the same value | `local-key` |
+| `NEXT_PUBLIC_INDRA_API_KEY` | Dashboard API key in `apps/web/.env.local`; embedded in the browser bundle, so this is not a multi-user authentication system | `local-key` |
+| `SEMANTIC_SCHOLAR_BASE_URL` | Optional provider endpoint; defaults to the public Graph API | `https://api.semanticscholar.org/graph/v1` |
 | `SEMANTIC_SCHOLAR_API_KEY` | Optional key enabling higher Semantic Scholar request quotas | `api-key` |
-| `HALUGATE_URL` | URL of the HALUGate service for PDF retrieval | `http://localhost:8000` |
+| `HALUGATE_URL` | URL of the HaluGate hallucination-detection service used by the CLI research pipeline | `http://localhost:8000` |
 
 ## Run the API
 
@@ -115,12 +118,16 @@ Major endpoints:
 
 The default repository backend is process-local memory. Set `INDRA_REPOSITORY_BACKEND=postgres` and `INDRA_DATABASE_URL` for durable persistence.
 
+## Run the research worker
+
+The API and standalone worker must use the same Postgres database. Initialize it with `python -m src.api.migrate` (or `--without-vectors` on Postgres without pgvector), then run `python -m src.jobs.research_worker`. See [Phase 1](docs/research/PHASE_1.md) for bounds, failure recovery, and verification details. The [Phase 2 session hub](docs/research/PHASE_2.md) adds research views, linked evidence inspectors and the full claim ledger.
+
 ## Run the dashboard
 
 ```bash
 cd apps/web
 cp .env.example .env.local
-npm install
+npm ci
 npm run dev
 ```
 
@@ -144,38 +151,45 @@ Here is a small example illustrating how to create a project, run a research ses
 ```bash
 curl -X POST http://localhost:8000/projects \
   -H 'Content-Type: application/json' \
-  -d '{"name": "Example project"}'
+  -d '{"title": "Example project"}'
 ```
 
-This returns a JSON object containing the new `project_id`.
+This returns the new project; its `id` is the project ID.
 
-2. Launch a research session within that project:
+2. Create a research session within that project:
 
 ```bash
 curl -X POST http://localhost:8000/sessions \
   -H 'Content-Type: application/json' \
-  -d '{"project_id": "<PROJECT_ID>", "query": "What is the role of quantum entanglement in photosynthesis?"}'
+  -d '{"project_id": "<PROJECT_ID>", "initial_query": "What is the role of quantum coherence in photosynthesis?"}'
 ```
 
-Record the returned `session_id`.
+The returned `id` is the session ID. New sessions are `pending`.
 
-3. Monitor session state:
+3. Start the session and monitor its state:
 
 ```bash
+curl -X POST http://localhost:8000/sessions/<SESSION_ID>/start
 curl http://localhost:8000/sessions/<SESSION_ID>/state
 ```
 
-Once the session has progressed, you can extract and validate claims or view research maps:
+Starting a session queues one `research_session` job. Run `python -m src.jobs.research_worker` in a separate terminal with the same Postgres configuration as the API. The worker searches, persists selected papers and PDF passages, extracts claims, and completes the session. See [Phase 1 setup and verification](docs/research/PHASE_1.md). Without a model key, claims remain explicitly unreviewed.
+
+4. Extract claims from text and validate one against the session's papers:
 
 ```bash
-# extract claims
-curl -X POST http://localhost:8000/sessions/<SESSION_ID>/claims/extract
+# extract atomic claims
+curl -X POST http://localhost:8000/sessions/<SESSION_ID>/claims/extract \
+  -H 'Content-Type: application/json' \
+  -d '{"source_text": "Quantum coherence persists for hundreds of femtoseconds in the FMO complex."}'
 
-# validate a specific claim
-curl -X POST http://localhost:8000/claims/<CLAIM_ID>/validate
+# retrieve evidence and validate one claim
+curl -X POST http://localhost:8000/claims/<CLAIM_ID>/validate/auto \
+  -H 'Content-Type: application/json' \
+  -d '{}'
 ```
 
-This quick start demonstrates the core workflow: create a project, start a session, follow its progress, and interact with claims and evidence.
+When `INDRA_API_KEY` is set, add `-H "X-Indra-API-Key: <key>"` to every request.
 
 ## Phase 8 export formats
 
@@ -206,13 +220,7 @@ npm run build
 Backend:
 
 ```bash
-python -m pytest -q \
-  test_api_cors.py \
-  test_api.py \
-  test_claim_evidence_retrieval.py \
-  test_research_map.py \
-  test_research_advice.py \
-  test_exports.py
+python -m pytest -q
 ```
 
 Implementation notes:
@@ -225,10 +233,10 @@ Implementation notes:
 
 ## Production-hardening work still required
 
-- Connect durable research jobs to full `MasterAgent` execution.
-- Replace process-local SSE with resumable cross-process events.
+- Expand the bounded product worker into recursive Scout and hypothesis orchestration.
+- Scale the resumable durable-event polling transport with pagination and LISTEN/NOTIFY.
 - Add authentication and project authorization.
-- Expose full-text paper chunks to evidence retrieval.
+- Add dense/vector retrieval and scanned-document handling beyond page-numbered PDF text.
 - Add calibrated domain-specific inference where appropriate.
 - Deploy Postgres, migrations, API, workers, and dashboard as one system.
 - Add large-session caching and asynchronous export jobs if session scale requires them.

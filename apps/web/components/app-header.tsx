@@ -25,8 +25,6 @@ export function AppHeader({
         </Link>
         <nav className="primary-nav" aria-label="Primary navigation">
           <Link href="/projects">Projects</Link>
-          <span className="nav-disabled" title="Available in a later roadmap phase">Research maps</span>
-          <span className="nav-disabled" title="Available in a later roadmap phase">Exports</span>
         </nav>
       </div>
       {(title || description || actions) && (

@@ -22,56 +22,56 @@ _FORMATS = {
     "bibtex": ExportDescriptor(
         format="bibtex",
         label="BibTeX bibliography",
-        filename="erla-bibliography.bib",
+        filename="indra-bibliography.bib",
         media_type="application/x-bibtex; charset=utf-8",
         description="Session papers as BibTeX records.",
     ),
     "ris": ExportDescriptor(
         format="ris",
         label="RIS bibliography",
-        filename="erla-bibliography.ris",
+        filename="indra-bibliography.ris",
         media_type="application/x-research-info-systems; charset=utf-8",
         description="Session papers in RIS format.",
     ),
     "report-markdown": ExportDescriptor(
         format="report-markdown",
         label="Markdown research report",
-        filename="erla-research-report.md",
+        filename="indra-research-report.md",
         media_type="text/markdown; charset=utf-8",
         description="Research report with papers, findings, uncertainty, and next actions.",
     ),
     "literature-review-latex": ExportDescriptor(
         format="literature-review-latex",
         label="LaTeX literature review outline",
-        filename="erla-literature-review.tex",
+        filename="indra-literature-review.tex",
         media_type="application/x-tex; charset=utf-8",
         description="LaTeX outline grounded in session branches and claim status.",
     ),
     "annotated-bibliography": ExportDescriptor(
         format="annotated-bibliography",
         label="Annotated bibliography",
-        filename="erla-annotated-bibliography.md",
+        filename="indra-annotated-bibliography.md",
         media_type="text/markdown; charset=utf-8",
         description="Paper annotations with linked claim validation states.",
     ),
     "claim-ledger-csv": ExportDescriptor(
         format="claim-ledger-csv",
         label="Claim ledger CSV",
-        filename="erla-claim-ledger.csv",
+        filename="indra-claim-ledger.csv",
         media_type="text/csv; charset=utf-8",
         description="Flat claim ledger with evidence counts and validation status.",
     ),
     "claim-ledger-json": ExportDescriptor(
         format="claim-ledger-json",
         label="Claim ledger JSON",
-        filename="erla-claim-ledger.json",
+        filename="indra-claim-ledger.json",
         media_type="application/json; charset=utf-8",
         description="Structured claims and attached evidence passages.",
     ),
     "research-map-json": ExportDescriptor(
         format="research-map-json",
         label="Research map JSON",
-        filename="erla-research-map.json",
+        filename="indra-research-map.json",
         media_type="application/json; charset=utf-8",
         description="Citation graph, timeline, clusters, recommendations, and overview.",
     ),
@@ -125,7 +125,7 @@ class ExportGenerator:
                 "eprint": paper.arxiv_id,
                 "url": paper.url or paper.open_access_pdf_url or paper.pdf_url,
                 "abstract": self._bib_escape(paper.abstract) if paper.abstract else None,
-                "note": "Exported from ERLA; inspect claim ledger for validation status.",
+                "note": "Exported from Indra; inspect claim ledger for validation status.",
             }
             lines = [f"@article{{{key},"]
             for name, value in fields.items():
@@ -152,7 +152,7 @@ class ExportGenerator:
                 lines.append(f"UR  - {paper.url or paper.open_access_pdf_url or paper.pdf_url}")
             if paper.abstract:
                 lines.append(f"AB  - {self._single_line(paper.abstract)}")
-            lines.append("N1  - Exported from ERLA; validation status is stored in the claim ledger.")
+            lines.append("N1  - Exported from Indra; validation status is stored in the claim ledger.")
             lines.append("ER  -")
             records.append("\n".join(lines))
         return "\n\n".join(records) + ("\n" if records else "")
@@ -166,9 +166,9 @@ class ExportGenerator:
             claims_by_branch[str(claim.branch_id or "unassigned")].append(claim)
 
         lines = [
-            f"# ERLA research report: {snapshot.session.initial_query}",
+            f"# Indra research report: {snapshot.session.initial_query}",
             "",
-            "> Validation notice: every claim below includes its current ERLA status. "
+            "> Validation notice: every claim below includes its current Indra status. "
             "Unsupported, contradicted, speculative, and unreviewed claims must not be read as established facts.",
             "",
             "## Field overview",
@@ -251,7 +251,7 @@ class ExportGenerator:
             r"\usepackage{xcolor}",
             r"\newcommand{\claimstatus}[1]{\texttt{[#1]}}",
             r"\title{" + self._latex_escape(snapshot.session.initial_query) + r"}",
-            r"\author{ERLA export}",
+            r"\author{Indra export}",
             r"\date{}",
             r"\begin{document}",
             r"\maketitle",
@@ -293,7 +293,7 @@ class ExportGenerator:
                 r"\paragraph{SPECULATIVE} " + self._latex_escape(hypothesis.text)
                 + r"\\ \textit{This proposal is not validated and does not claim novelty.}"
             )
-        lines.extend([r"\bibliographystyle{plain}", r"\bibliography{erla-bibliography}", r"\end{document}"])
+        lines.extend([r"\bibliographystyle{plain}", r"\bibliography{indra-bibliography}", r"\end{document}"])
         return "\n".join(lines) + "\n"
 
     def _annotated_bibliography(self, snapshot: Any) -> str:
@@ -305,7 +305,7 @@ class ExportGenerator:
         for evidence in snapshot.claim_evidence:
             evidence_by_claim[str(evidence.claim_id)].append(evidence)
         lines = [
-            "# ERLA annotated bibliography",
+            "# Indra annotated bibliography",
             "",
             "> Claim annotations preserve validation status. Labels such as `NOT_FOUND`, `CONTRADICTED`, `SPECULATIVE`, and `NEEDS_REVIEW` indicate that the statement is not established.",
             "",

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..domain.enums import (
     BranchMode,
@@ -45,10 +45,32 @@ class SessionCreate(BaseModel):
     """Payload for creating a research session."""
 
     project_id: str | None = None
-    initial_query: str
-    source_providers: list[str] = Field(default_factory=lambda: ["semantic_scholar"])
+    initial_query: str = Field(min_length=1, max_length=4000)
+    source_providers: list[str] = Field(default_factory=lambda: ["arxiv"])
     filters: dict[str, Any] = Field(default_factory=dict)
     parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+    @field_validator("initial_query")
+    @classmethod
+    def nonblank_query(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Research query must not be blank")
+        return value.strip()
+
+    @field_validator("source_providers")
+    @classmethod
+    def supported_sources(cls, value: list[str]) -> list[str]:
+        if not value or any(name not in {"arxiv", "semantic_scholar"} for name in value):
+            raise ValueError("Choose at least one source: arxiv or semantic_scholar")
+        return list(dict.fromkeys(value))
+
+    @field_validator("parameters")
+    @classmethod
+    def bounded_research(cls, value: dict) -> dict:
+        from ..research.models import ResearchLimits
+        ResearchLimits.model_validate(value.get("research", {}))
+        return value
 
 
 class ResearchSession(SessionCreate):

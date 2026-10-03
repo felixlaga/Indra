@@ -162,6 +162,7 @@ export interface EventRecord {
   id: string;
   session_id: string;
   event_type: string;
+  sequence?: number;
   payload: Record<string, unknown>;
   branch_id?: string | null;
   paper_id?: string | null;
@@ -207,6 +208,9 @@ export interface SessionSnapshot {
   claims: Claim[];
   claim_evidence: ClaimEvidence[];
   events: EventRecord[];
+  event_cursor?: number;
+  events_has_more?: boolean;
+  validated_claim_ids?: string[];
 }
 
 export type ResearchMapPaperRole =

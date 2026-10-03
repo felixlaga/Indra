@@ -12,6 +12,7 @@ import type {
   ResearchSession,
   SessionCreate,
   SessionSnapshot,
+  EventRecord,
 } from "@/lib/types";
 
 const API_URL = (
@@ -50,7 +51,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, polls = 0): Promise<T> {
   const response = await fetch(indraUrl(path), {
     ...init,
     headers: {
@@ -81,6 +82,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (response.status === 204) {
     return undefined as T;
   }
+
+  if (response.status === 202) {
+    const pending = await response.json();
+    if (!polls) throw new ApiError(pending.detail || "Research view is still queued. Start the view worker, then retry.", 202, pending);
+    await new Promise<void>((resolve, reject) => {
+      const signal = init?.signal;
+      if (signal?.aborted) { reject(signal.reason); return; }
+      const abort = () => { clearTimeout(timer); reject(signal?.reason); };
+      const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, 1000);
+      signal?.addEventListener("abort", abort, { once: true });
+    });
+    return request<T>(path, init, polls - 1);
+  }
   return (await response.json()) as T;
 }
 
@@ -101,10 +115,14 @@ export const indraApi = {
     }),
   getSessionSnapshot: (sessionId: string) =>
     request<SessionSnapshot>(`/sessions/${sessionId}/state`),
-  getResearchMap: (sessionId: string) =>
-    request<ResearchMap>(`/sessions/${sessionId}/map`),
-  getResearchAdvice: (sessionId: string) =>
-    request<ResearchAdvice>(`/sessions/${sessionId}/analysis`),
+  getResearchMap: (sessionId: string, signal?: AbortSignal) =>
+    request<ResearchMap>(`/sessions/${sessionId}/map`, { signal }, 60),
+  getResearchAdvice: (sessionId: string, signal?: AbortSignal) =>
+    request<ResearchAdvice>(`/sessions/${sessionId}/analysis`, { signal }, 60),
+  retryResearchViews: (sessionId: string) =>
+    request<{status: string}>(`/sessions/${sessionId}/views/retry`, { method: "POST" }),
+  getOlderEvents: (sessionId: string, before: number) =>
+    request<EventRecord[]>(`/sessions/${sessionId}/events?before=${before}&limit=200`),
   getExportCatalog: (sessionId: string) =>
     request<ExportCatalog>(`/sessions/${sessionId}/exports`),
   runSessionAction: (

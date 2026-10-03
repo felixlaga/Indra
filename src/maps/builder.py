@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from math import log1p
+import heapq
 import re
 from statistics import median
 from typing import Any, Iterable
@@ -276,23 +277,29 @@ class ResearchMapBuilder:
             str(entry.paper.id): str(entry.branch_id) if entry.branch_id else None
             for entry in entries
         }
-        candidates: list[RelatedPaperRecommendation] = []
+        observed_pairs = {frozenset((edge.source_paper_id, edge.target_paper_id)) for edge in observed_edges}
+        candidates = []
+        pair_index = 0
         paper_ids = sorted(terms)
         for index, source_id in enumerate(paper_ids):
             for target_id in paper_ids[index + 1 :]:
                 shared = terms[source_id] & terms[target_id]
-                union = terms[source_id] | terms[target_id]
-                lexical = len(shared) / len(union) if union else 0.0
+                union_size = len(terms[source_id]) + len(terms[target_id]) - len(shared)
+                lexical = len(shared) / union_size if union_size else 0.0
                 same_branch = (
                     branch_by_paper[source_id] is not None
                     and branch_by_paper[source_id] == branch_by_paper[target_id]
                 )
-                observed = self._pair_has_edge(observed_edges, source_id, target_id)
+                observed = frozenset((source_id, target_id)) in observed_pairs
                 score = min(
                     1.0,
                     lexical + (0.12 if same_branch else 0) + (0.18 if observed else 0),
                 )
                 if score < 0.16:
+                    continue
+                pair_index += 1
+                rank = (round(score, 4), -pair_index)
+                if len(candidates) == 24 and rank <= candidates[0][:2]:
                     continue
                 reasons = []
                 if observed:
@@ -301,17 +308,17 @@ class ResearchMapBuilder:
                     reasons.append("explored in the same research branch")
                 if shared:
                     reasons.append(f"shared terms: {', '.join(sorted(shared)[:5])}")
-                candidates.append(
-                    RelatedPaperRecommendation(
-                        source_paper_id=source_id,
-                        target_paper_id=target_id,
-                        score=round(score, 4),
-                        reason="; ".join(reasons) or "session-local lexical similarity",
-                        shared_terms=sorted(shared)[:8],
-                    )
+                candidate = RelatedPaperRecommendation(
+                    source_paper_id=source_id,
+                    target_paper_id=target_id,
+                    score=round(score, 4),
+                    reason="; ".join(reasons) or "session-local lexical similarity",
+                    shared_terms=sorted(shared)[:8],
                 )
-        candidates.sort(key=lambda item: item.score, reverse=True)
-        return candidates[:24]
+                heapq.heappush(candidates, (*rank, candidate))
+                if len(candidates) > 24:
+                    heapq.heappop(candidates)
+        return [item[2] for item in sorted(candidates, reverse=True)]
 
     def _timeline(self, nodes: list[ResearchMapNode]) -> list[ResearchTimelineBucket]:
         years: dict[int, list[str]] = defaultdict(list)

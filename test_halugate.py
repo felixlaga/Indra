@@ -8,10 +8,14 @@ Tests the pure Python HaluGate implementation with all 3 stages:
 """
 
 import asyncio
+import os
+
+import pytest
 
 from src.halugate import LocalHaluGate
 
 
+@pytest.mark.skipif(os.getenv("INDRA_RUN_LIVE_TESTS") != "true", reason="Opt in to downloading and running HaluGate models with INDRA_RUN_LIVE_TESTS=true")
 async def test_local_halugate():
     print("Loading HaluGate models (3 stages)...")
     detector = LocalHaluGate(use_sentinel=True)

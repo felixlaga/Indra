@@ -11,9 +11,9 @@ export function ledgerRows(snapshot) {
     snapshot.branches.map((branch) => [branch.id, branch]),
   );
   const checked = new Set(
-    snapshot.events
+    [...(snapshot.validated_claim_ids ?? []), ...snapshot.events
       .filter((event) => event.event_type === "claim_validated")
-      .map((event) => event.payload.claim_id),
+      .map((event) => event.payload.claim_id)],
   );
   const evidence = new Map();
   for (const item of snapshot.claim_evidence) {

@@ -130,6 +130,9 @@ def test_empty_session_map_endpoint():
     session = client.post("/sessions", json={"initial_query": "empty research map"}).json()
 
     response = client.get("/sessions/" + session["id"] + "/map")
-
+    assert response.status_code == 202
+    from src.jobs.view_worker import ViewWorker
+    ViewWorker(client.app.state.repository).run_once()
+    response = client.get("/sessions/" + session["id"] + "/map")
     assert response.status_code == 200
     assert response.json()["nodes"] == []

@@ -203,7 +203,7 @@ class Summary(BaseModel):
 class ClaimExtractionRequest(BaseModel):
     """Payload for extracting claims from summary or synthesis text."""
 
-    source_text: str = Field(min_length=1)
+    source_text: str = Field(min_length=1, max_length=100_000)
     branch_id: str | None = None
     paper_id: str | None = None
     summary_id: str | None = None
@@ -231,7 +231,7 @@ class Claim(BaseModel):
 class ClaimEvidenceCreate(BaseModel):
     """Evidence supplied for claim validation."""
 
-    evidence_text: str = Field(min_length=1)
+    evidence_text: str = Field(min_length=1, max_length=100_000)
     relation: EvidenceRelation
     source_type: EvidenceSourceType = EvidenceSourceType.MANUAL
     paper_id: str | None = None
@@ -324,6 +324,7 @@ class Event(BaseModel):
     id: str
     session_id: str
     event_type: str
+    sequence: int = Field(default=0, ge=0)
     payload: dict[str, Any] = Field(default_factory=dict)
     branch_id: str | None = None
     paper_id: str | None = None
@@ -404,3 +405,6 @@ class SessionSnapshot(BaseModel):
     claims: list[Claim] = Field(default_factory=list)
     claim_evidence: list[ClaimEvidence] = Field(default_factory=list)
     events: list[Event] = Field(default_factory=list)
+    event_cursor: int = 0
+    events_has_more: bool = False
+    validated_claim_ids: list[str] = Field(default_factory=list)

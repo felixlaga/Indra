@@ -6,6 +6,19 @@ Indra should become the best research navigator and epistemic research assistant
 
 Do not build a generic AI writing assistant first.
 
+## Current implementation track (October 2026)
+
+The historical numbered sections below describe the original product surfaces. The September audit established a separate implementation track under `docs/research`:
+
+1. [Executable research](docs/research/PHASE_1.md): merged.
+2. [Session hub](docs/research/PHASE_2.md): merged.
+3. [Ordered events](docs/research/PHASE_3_4.md): implemented and locally verified.
+4. [Background research views and caching](docs/research/PHASE_3_4.md): implemented and locally verified, with remaining scale limits documented.
+5. Next: user accounts, project authorization, and server-side credential handling.
+6. Then: deployment packaging and operational verification.
+
+Database paper/claim pagination and asynchronous exports remain follow-on scale work. Local verification does not establish hosted deployment or live model calibration.
+
 ## Phase 0: Stabilize the repo
 
 Goal: remove hackathon ambiguity and make the project coherent for Codex and contributors.

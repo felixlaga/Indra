@@ -59,6 +59,9 @@ class MemoryResearchWrites:
                 paper.id = existing.id
                 paper.created_at = existing.created_at
             self._papers[paper.id] = paper
+            if existing and existing.model_dump(exclude={"created_at", "updated_at"}) != paper.model_dump(exclude={"created_at", "updated_at"}):
+                for session_id in sorted({link.session_id for link in self._session_papers.values() if link.paper_id == paper.id}):
+                    self._create_event_unlocked(session_id, "paper_metadata_updated", {}, paper_id=paper.id)
             link_id = stable_id(leased.session_id, leased.branch_id or "", paper.id)
             self._session_papers[link_id] = SessionPaper(
                 id=link_id,

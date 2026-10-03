@@ -69,3 +69,41 @@ for (const [name, body, status, message] of [
     });
   });
 }
+
+test("research views poll queued responses and return only completed data", async (t) => {
+  const { indraApi } = await loadApi();
+  const realTimer = globalThis.setTimeout;
+  t.mock.method(globalThis, "setTimeout", (fn) => realTimer(fn, 0));
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => ++calls < 3
+    ? Response.json({ status: "queued", detail: "Preparing" }, { status: 202 })
+    : Response.json({ nodes: [{ paper_id: "p1" }] }));
+  assert.deepEqual(await indraApi.getResearchMap("s1"), { nodes: [{ paper_id: "p1" }] });
+  assert.equal(calls, 3);
+});
+
+test("research view polling stops on navigation abort", async (t) => {
+  const { indraApi } = await loadApi();
+  const controller = new AbortController();
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    controller.abort(new Error("Navigation"));
+    return Response.json({ status: "queued" }, { status: 202 });
+  });
+  await assert.rejects(indraApi.getResearchMap("s1", controller.signal), /Navigation/);
+  assert.equal(calls, 1);
+});
+
+test("research view wait has a finite timeout with actionable queue details", async (t) => {
+  const { indraApi } = await loadApi();
+  const realTimer = globalThis.setTimeout;
+  t.mock.method(globalThis, "setTimeout", (fn) => realTimer(fn, 0));
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    return Response.json({ status: "queued", detail: "Start the view worker." }, { status: 202 });
+  });
+  await assert.rejects(indraApi.getResearchAdvice("s1"), /Start the view worker/);
+  assert.equal(calls, 61);
+});

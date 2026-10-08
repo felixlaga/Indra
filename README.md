@@ -6,7 +6,8 @@ Indra is not primarily a generic chatbot or writing assistant. Its product surfa
 
 ## Implemented product phases
 
-- Academic search through Semantic Scholar and arXiv.
+- Academic search through arXiv, OpenAlex and Semantic Scholar, with OpenAlex citation links ([Phase 6](docs/research/PHASE_6.md)).
+- Optional semantic evidence retrieval with a local embedding model, and OCR for scanned PDFs when Tesseract is installed.
 - Composite multi-provider search with parallel, fallback, and single-source strategies.
 - PDF text extraction and OpenRouter-compatible summarization.
 - Recursive research orchestration with branches, loops, reflection, and hypothesis generation.
@@ -91,6 +92,8 @@ HALUGATE_URL=http://localhost:8000
 | `NEXT_PUBLIC_INDRA_API_KEY` | Dashboard API key in `apps/web/.env.local`; embedded in the browser bundle, so this is not a multi-user authentication system | `local-key` |
 | `SEMANTIC_SCHOLAR_BASE_URL` | Optional provider endpoint; defaults to the public Graph API | `https://api.semanticscholar.org/graph/v1` |
 | `SEMANTIC_SCHOLAR_API_KEY` | Optional key enabling higher Semantic Scholar request quotas | `api-key` |
+| `INDRA_CONTACT_EMAIL` | Optional contact sent to OpenAlex for its faster "polite pool" | `you@example.org` |
+| `INDRA_EMBEDDING_MODEL` | Optional local embedding model for semantic evidence retrieval (downloads on first use) | `sentence-transformers/all-MiniLM-L6-v2` |
 | `HALUGATE_URL` | URL of the HaluGate hallucination-detection service used by the CLI research pipeline | `http://localhost:8000` |
 
 ## Run the API
@@ -238,7 +241,6 @@ Implementation notes:
 
 - Add database pagination for paper/claim snapshots and graph virtualization for larger sessions.
 - Add authentication and project authorization.
-- Add dense/vector retrieval and scanned-document handling beyond page-numbered PDF text.
 - Add calibrated domain-specific inference where appropriate.
 - Deploy Postgres, migrations, API, workers, and dashboard as one system.
 - Add cache eviction/versioning and asynchronous export jobs if session scale requires them.

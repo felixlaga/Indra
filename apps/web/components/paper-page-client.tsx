@@ -116,6 +116,7 @@ export function PaperPageClient({ paperId }: { paperId: string }) {
               <div><dt>DOI</dt><dd>{paper.doi || "-"}</dd></div>
               <div><dt>arXiv</dt><dd>{paper.arxiv_id || "-"}</dd></div>
               <div><dt>Semantic Scholar</dt><dd>{paper.semantic_scholar_id || "-"}</dd></div>
+              <div><dt>OpenAlex</dt><dd>{paper.openalex_id || "-"}</dd></div>
               <div><dt>Updated</dt><dd>{formatDate(paper.updated_at)}</dd></div>
             </dl>
           </section>

@@ -57,6 +57,8 @@ class PaperChunk(BaseModel):
     page_start: int | None = Field(default=None, ge=1)
     page_end: int | None = Field(default=None, ge=1)
     section_title: str | None = None
+    # Stored for semantic retrieval; never sent to API clients.
+    embedding: list[float] | None = Field(default=None, exclude=True)
 
 
 class ClaimDraft(BaseModel):

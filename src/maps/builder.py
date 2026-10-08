@@ -554,4 +554,5 @@ class ResearchMapBuilder:
         value = re.sub(r"^https?://(dx\.)?doi\.org/", "", value)
         value = re.sub(r"^doi:\s*", "", value)
         value = re.sub(r"^arxiv:\s*", "", value)
+        value = re.sub(r"^https?://openalex\.org/", "", value)
         return re.sub(r"[^a-z0-9./|-]+", "", value)

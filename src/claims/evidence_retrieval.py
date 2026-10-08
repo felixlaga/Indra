@@ -68,6 +68,8 @@ class EvidenceCandidate:
     page_start: int | None = None
     page_end: int | None = None
     section_title: str | None = None
+    # Unit-length passage embedding, when semantic retrieval is enabled.
+    embedding: tuple[float, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,17 @@ class RetrievedEvidence:
     score: float
     retrieval_score: float
     overlap_terms: tuple[str, ...]
+    semantic_score: float | None = None
+
+
+# Cosine similarity a passage needs to qualify on meaning alone, for unit-length
+# sentence embeddings. It only nominates passages; the verifier still judges them.
+MIN_SEMANTIC_SCORE = 0.5
+_RRF_K = 60
+
+
+def _cosine(left, right) -> float:
+    return sum(a * b for a, b in zip(left, right))
 
 
 class EvidenceRetriever:
@@ -91,12 +104,17 @@ class EvidenceRetriever:
         *,
         top_k: int = 5,
         min_score: float = 0.15,
+        claim_embedding: tuple[float, ...] | None = None,
     ) -> list[RetrievedEvidence]:
         """Return the strongest unique passages for a claim.
 
         The score is the fraction of content-bearing claim terms present in a passage,
         plus a small source-hierarchy bonus. A passage must meet ``min_score`` before
         it is stored as evidence.
+
+        With ``claim_embedding``, a passage also qualifies on meaning (cosine ≥
+        ``MIN_SEMANTIC_SCORE``) and lexical and semantic ranks are fused with
+        reciprocal rank fusion, so paraphrases are found without dropping exact matches.
         """
 
         if top_k < 1:
@@ -130,7 +148,14 @@ class EvidenceRetriever:
                 1.0,
                 coverage + _SOURCE_BONUS.get(candidate.source_type, 0.0),
             )
-            if retrieval_score < min_score:
+            semantic = (
+                _cosine(claim_embedding, candidate.embedding)
+                if claim_embedding is not None and candidate.embedding is not None
+                else None
+            )
+            if retrieval_score < min_score and (
+                semantic is None or semantic < MIN_SEMANTIC_SCORE
+            ):
                 continue
 
             relation, relation_score = "mentions", 0.0
@@ -141,18 +166,34 @@ class EvidenceRetriever:
                     score=relation_score,
                     retrieval_score=retrieval_score,
                     overlap_terms=tuple(sorted(overlap)),
+                    semantic_score=semantic,
                 )
             )
 
-        ranked.sort(
-            key=lambda item: (
+        def lexical_key(item):
+            return (
                 item.retrieval_score,
                 item.score,
                 _SOURCE_BONUS.get(item.candidate.source_type, 0.0),
                 len(item.candidate.evidence_text),
-            ),
-            reverse=True,
-        )
+            )
+
+        ranked.sort(key=lexical_key, reverse=True)
+        if any(item.semantic_score is not None for item in ranked):
+            lexical_rank = {id(item): n for n, item in enumerate(ranked)}
+            by_meaning = sorted(
+                ranked, key=lambda item: item.semantic_score or -1.0, reverse=True
+            )
+            semantic_rank = {id(item): n for n, item in enumerate(by_meaning)}
+            ranked.sort(
+                key=lambda item: (
+                    -(
+                        1 / (_RRF_K + lexical_rank[id(item)])
+                        + 1 / (_RRF_K + semantic_rank[id(item)])
+                    ),
+                    lexical_rank[id(item)],
+                )
+            )
         return ranked[:top_k]
 
     def _terms(self, text: str) -> set[str]:

@@ -6,11 +6,14 @@ writes an overview and cross-paper hypotheses.
 """
 
 import asyncio
+import logging
+from itertools import zip_longest
 
 from ..api.claim_validation_models import ClaimAutoValidationRequest
 from ..api.claim_validation_routes import validate_automatically
 from ..api.models import JobType
 from ..claims import ClaimExtractor
+from ..domain.papers import normalize_title
 from .full_text import fetch_full_text
 from .model import ModelRateLimited, ModelUnavailable
 from .models import (
@@ -24,6 +27,12 @@ from .models import (
     stable_id,
 )
 from .providers import search_provider
+
+logger = logging.getLogger(__name__)
+
+
+def title_key(title: str | None) -> str:
+    return " ".join((normalize_title(title) or "").split())
 from .scouts import (
     PLAN_INSTRUCTION,
     SYNTHESIS_INSTRUCTION,
@@ -101,9 +110,29 @@ class ResearchPipeline:
         *,
         search=search_provider,
         full_text=fetch_full_text,
+        embedder=None,
+        citations=None,
     ):
         self.repository, self.model = repository, model
         self.search, self.full_text = search, full_text
+        self.embedder, self.citations = embedder, citations
+
+    async def _embed(self, chunks, checkpoint):
+        """Attach passage embeddings; a failing embedder only disables semantic retrieval."""
+
+        if self.embedder is None or not chunks:
+            return
+        try:
+            vectors = await asyncio.to_thread(
+                self.embedder.embed, [c.text for c in chunks]
+            )
+        except Exception as exc:
+            logger.warning("Embedding failed; using lexical retrieval: %s", exc)
+            self.embedder = None
+            checkpoint(embedding_warning=f"Semantic retrieval disabled ({type(exc).__name__})")
+            return
+        for chunk, vector in zip(chunks, vectors):
+            chunk.embedding = list(vector)
 
     async def run(self, leased) -> bool:
         """Run one job; True asks the repository to queue session synthesis when last."""
@@ -167,22 +196,43 @@ class ResearchPipeline:
                 ),
                 return_exceptions=True,
             )
-            warnings, found, successes = [], [], 0
+            warnings, results, successes = [], [], 0
             for name, outcome in zip(session.source_providers, outcomes):
                 if isinstance(outcome, Exception):
                     warnings.append(f"{name}: {type(outcome).__name__}")
                 else:
                     successes += 1
-                    found.extend(outcome)
+                    results.append(outcome)
             if not successes:
                 raise RuntimeError(
                     "All selected search providers failed: " + "; ".join(warnings)
                 )
+            # Interleave sources by rank so each contributes to a small selection.
+            found = [
+                p for ranked in zip_longest(*results) for p in ranked if p is not None
+            ]
             unique = {p.canonical_key: p for p in selected}
+            # A preprint and its journal version have different IDs but one title.
+            titles = {title_key(p.title) for p in selected} | {
+                title_key(p.paper.title)
+                for p in snapshot.papers
+                if p.paper.canonical_key in known
+            }
             for paper in found:
-                if paper.canonical_key not in known:
-                    unique.setdefault(paper.canonical_key, paper)
+                title = title_key(paper.title)
+                if paper.canonical_key in known or (
+                    paper.canonical_key not in unique and title in titles
+                ):
+                    continue
+                unique.setdefault(paper.canonical_key, paper)
+                titles.add(title)
             selected = list(unique.values())[:wanted]
+            if self.citations is not None and selected:
+                try:
+                    async with asyncio.timeout(limits.provider_timeout_seconds):
+                        selected = await self.citations(selected)
+                except Exception as exc:
+                    warnings.append(f"citations: {type(exc).__name__}")
             for paper in selected:
                 paper.id = repo.save_research_paper(leased, PaperResult(paper=paper))
             checkpoint(
@@ -220,6 +270,7 @@ class ResearchPipeline:
             except Exception as exc:
                 note = f"PDF retrieval failed ({type(exc).__name__}); abstract-only coverage."
                 parse_status = "failed"
+            await self._embed(chunks, checkpoint)
             text = "\n\n".join(c.text for c in chunks) or paper.abstract or ""
             if not text:
                 repo.save_research_paper(
@@ -292,12 +343,16 @@ class ResearchPipeline:
             )
             request = ClaimAutoValidationRequest(top_k=3)
             try:
-                await validate_automatically(repo, claim.id, request, model, leased)
+                await validate_automatically(
+                    repo, claim.id, request, model, leased, embedder=self.embedder
+                )
             except (ModelUnavailable, ValueError) as exc:
                 if isinstance(exc, ModelUnavailable):
                     stop_model(exc)
                 # Attach retrieved passages unjudged so the claim stays reviewable.
-                await validate_automatically(repo, claim.id, request, None, leased)
+                await validate_automatically(
+                    repo, claim.id, request, None, leased, embedder=self.embedder
+                )
                 for_review.add(claim.id)
             else:
                 if model is None and self.model:

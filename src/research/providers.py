@@ -44,6 +44,15 @@ def to_product_paper(details, provider: str) -> Paper:
 
 
 async def search_provider(name, query, filters, limits):
+    if name == "openalex":
+        from .openalex import OpenAlexClient
+
+        async with asyncio.timeout(limits.provider_timeout_seconds):
+            async with OpenAlexClient() as client:
+                found = await client.search(
+                    query, limit=limits.search_limit, filters=filters
+                )
+                return found[: limits.max_papers]
     if name == "arxiv":
         from ..arxiv.adapters import ArXivAdapter
 
@@ -67,3 +76,43 @@ async def search_provider(name, query, filters, limits):
                 return []
             details = await adapter.fetch_papers([p.paper_id for p in selected])
             return [to_product_paper(p, name) for p in details]
+
+
+async def enrich_citations(papers):
+    """Add OpenAlex IDs and reference lists so the map can draw observed citations."""
+
+    from .openalex import OpenAlexClient
+
+    if not papers:
+        return papers
+    async with OpenAlexClient() as client:
+        found = await client.lookup(papers)
+    enriched = []
+    for paper in papers:
+        match = found.get(paper.canonical_key)
+        if match is None:
+            enriched.append(paper)
+            continue
+        enriched.append(
+            paper.model_copy(
+                update={
+                    "openalex_id": paper.openalex_id or match.openalex_id,
+                    "doi": paper.doi or match.doi,
+                    "citation_count": paper.citation_count
+                    if paper.citation_count is not None
+                    else match.citation_count,
+                    "abstract": paper.abstract or match.abstract,
+                    "reference_count": paper.reference_count
+                    if paper.reference_count is not None
+                    else match.reference_count,
+                    "open_access_pdf_url": paper.open_access_pdf_url
+                    or match.open_access_pdf_url,
+                    "metadata": {
+                        **paper.metadata,
+                        "references": match.metadata.get("references", []),
+                        "citations_source": "openalex",
+                    },
+                }
+            )
+        )
+    return enriched

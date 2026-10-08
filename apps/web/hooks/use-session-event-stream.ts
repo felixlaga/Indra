@@ -27,7 +27,9 @@ function parseFrame(frame: string): EventRecord | null {
 export function useSessionEventStream(
   sessionId: string,
   onEvent: (event: EventRecord) => void,
+  initialCursor?: number,
 ): StreamState {
+  const ready = initialCursor !== undefined;
   const callbackRef = useRef(onEvent);
   const [state, setState] = useState<StreamState>({
     connected: false,
@@ -39,9 +41,10 @@ export function useSessionEventStream(
   }, [onEvent]);
 
   useEffect(() => {
+    if (!ready) return;
     const controller = new AbortController();
     let cancelled = false;
-    let cursor: string | null = null;
+    let cursor: string | null = String(initialCursor);
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     async function connect() {
@@ -72,7 +75,7 @@ export function useSessionEventStream(
             buffer = buffer.slice(boundary + 2);
             const event = parseFrame(frame);
             if (event) {
-              cursor = event.id;
+              cursor = String(event.sequence ?? event.id);
               callbackRef.current(event);
             }
             boundary = buffer.indexOf("\n\n");
@@ -92,7 +95,8 @@ export function useSessionEventStream(
       controller.abort();
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [sessionId]);
+  // Seed once from the snapshot; reconnects use the last delivered event.
+  }, [sessionId, ready]);
 
   return state;
 }

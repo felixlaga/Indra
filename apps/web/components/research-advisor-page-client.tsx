@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppHeader } from "@/components/app-header";
 import { EmptyState } from "@/components/empty-state";
@@ -152,21 +152,27 @@ export function ResearchAdvisorPageClient({ sessionId }: { sessionId: string }) 
   const [tab, setTab] = useState<Tab>("recommendations");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const pending = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
+    pending.current?.abort();
+    const controller = new AbortController();
+    pending.current = controller;
     setLoading(true);
     setError(null);
     try {
-      setAdvice(await indraApi.getResearchAdvice(sessionId));
+      setAdvice(await indraApi.getResearchAdvice(sessionId, controller.signal));
     } catch (caught) {
+      if (controller.signal.aborted) return;
       setError(caught instanceof Error ? caught.message : "Research advice could not be loaded");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [sessionId]);
 
   useEffect(() => {
     void load();
+    return () => pending.current?.abort();
   }, [load]);
 
   const counts = useMemo(() => {
@@ -183,7 +189,7 @@ export function ResearchAdvisorPageClient({ sessionId }: { sessionId: string }) 
     return (
       <>
         <AppHeader title="Loading research advisor…" />
-        <main className="page-shell"><div className="detail-skeleton" /></main>
+        <main className="page-shell"><p role="status">Preparing research advice in the background…</p><div className="detail-skeleton" /></main>
       </>
     );
   }
@@ -192,7 +198,7 @@ export function ResearchAdvisorPageClient({ sessionId }: { sessionId: string }) 
     return (
       <>
         <AppHeader title="Research advisor unavailable" />
-        <main className="page-shell"><ErrorPanel message={error} onRetry={() => void load()} /></main>
+        <main className="page-shell"><ErrorPanel message={error} onRetry={() => void indraApi.retryResearchViews(sessionId).then(load).catch((error) => setError(error.message))} /></main>
       </>
     );
   }

@@ -91,6 +91,12 @@ test("all six filters compose and search is case insensitive", () => {
     ["c"],
   );
 });
+
+test("review filters retain checks outside the recent event window", () => {
+  const rows = ledgerRows({ ...snapshot, events: [], validated_claim_ids: ["b"] });
+  assert.equal(rows.find((row) => row.id === "b").reviewed, true);
+  assert.equal(rows.find((row) => row.id === "a").reviewed, false);
+});
 test("confidence sort leaves unscored last in either direction without mutating input", () => {
   const rows = ledgerRows(snapshot);
   assert.deepEqual(

@@ -102,15 +102,18 @@ class ResearchAdviceBuilder:
                     )
                 )
 
+        terms = {str(claim.id): self._terms(claim.claim_text) for claim in claims}
+        negated = {str(claim.id): self._negated(claim.claim_text) for claim in claims}
         for index, left in enumerate(claims):
             for right in claims[index + 1 :]:
-                left_terms = self._terms(left.claim_text)
-                right_terms = self._terms(right.claim_text)
-                union = left_terms | right_terms
-                similarity = len(left_terms & right_terms) / len(union) if union else 0.0
-                if similarity < 0.45:
+                if negated[str(left.id)] == negated[str(right.id)]:
                     continue
-                if self._negated(left.claim_text) == self._negated(right.claim_text):
+                left_terms = terms[str(left.id)]
+                right_terms = terms[str(right.id)]
+                shared_count = len(left_terms & right_terms)
+                union_size = len(left_terms) + len(right_terms) - shared_count
+                similarity = shared_count / union_size if union_size else 0.0
+                if similarity < 0.45:
                     continue
                 results.append(
                     ContradictionCandidate(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 
 from .event_stream import (
@@ -131,7 +131,7 @@ def get_session_state(session_id: str, request: Request) -> SessionSnapshot:
     """Get reconstructable session state."""
 
     try:
-        return get_repository(request).get_session_snapshot(session_id)
+        return get_repository(request).get_session_snapshot(session_id, event_limit=200)
     except RepositoryError as exc:
         handle_repository_error(exc)
         raise
@@ -460,11 +460,15 @@ def list_claim_evidence(claim_id: str, request: Request) -> list[ClaimEvidence]:
 
 
 @router.get("/sessions/{session_id}/events", response_model=list[Event])
-def list_session_events(session_id: str, request: Request) -> list[Event]:
-    """List events for a session."""
+def list_session_events(
+    session_id: str, request: Request,
+    after: int = Query(0, ge=0), before: int | None = Query(None, ge=1),
+    limit: int = Query(100, ge=1, le=500),
+) -> list[Event]:
+    """Read an ascending, bounded page; before returns the nearest older page."""
 
     try:
-        return get_repository(request).list_events(session_id)
+        return get_repository(request).read_events(session_id, after=after, before=before, limit=limit)
     except RepositoryError as exc:
         handle_repository_error(exc)
         raise
@@ -475,36 +479,36 @@ async def stream_session_events(
     session_id: str,
     request: Request,
     replay: bool = True,
-    heartbeat_seconds: float = 15.0,
+    heartbeat_seconds: float = Query(15.0, ge=0.1, le=60),
 ) -> StreamingResponse:
-    """Stream session events as server-sent events."""
+    """Resume durable ordered events without retaining or rereading history."""
 
     repository = get_repository(request)
+    cursor = request.headers.get("last-event-id") or request.query_params.get("cursor")
     try:
-        initial = repository.list_events(session_id)
+        latest = await asyncio.to_thread(repository.event_position, session_id)
+        position = (await asyncio.to_thread(repository.event_position, session_id, cursor)
+                    if cursor else (0 if replay else latest))
     except RepositoryError as exc:
         handle_repository_error(exc)
         raise
-    cursor = request.headers.get("last-event-id") or request.query_params.get("cursor")
-    ids = [event.id for event in initial]
-    if cursor in ids:
-        initial = initial[ids.index(cursor) + 1:]
-    elif not replay and not cursor:
-        initial = []
-    seen = set(ids) - {event.id for event in initial}
-    wait_seconds = min(max(heartbeat_seconds, 0.1), 2.0)
-
     async def event_generator():
-        pending = initial
-        while not await request.is_disconnected():
-            for event in pending:
-                if event.id not in seen:
-                    seen.add(event.id)
+        nonlocal position
+        async with request.app.state.event_notifications.subscribe(session_id) as wake:
+            while not await request.is_disconnected():
+                # Clear before reading: a commit during the read stays signalled.
+                wake.clear()
+                pending = await asyncio.to_thread(repository.read_events, session_id, after=position, limit=100)
+                for event in pending:
+                    position = event.sequence
                     yield format_sse_event(event)
-            yield format_sse_comment("keep-alive")
-            await asyncio.sleep(wait_seconds)
-            # Poll durable rows: worker and API need not share process-local queues.
-            pending = await asyncio.to_thread(repository.list_events, session_id)
+                if len(pending) == 100:
+                    continue
+                yield format_sse_comment("keep-alive")
+                try:
+                    await asyncio.wait_for(wake.wait(), timeout=min(heartbeat_seconds, 2.0))
+                except TimeoutError:
+                    pass
 
     return StreamingResponse(
         event_generator(),

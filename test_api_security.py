@@ -17,7 +17,13 @@ def test_advisor_and_exports_require_and_accept_dashboard_key(monkeypatch, suffi
         path = f"/sessions/{session.id}/{suffix}"
         assert client.get(path).status_code == 401
         assert client.get(path, headers={"X-Indra-API-Key": "wrong"}).status_code == 401
-        assert client.get(path, headers={"X-Indra-API-Key": "local-test-key"}).status_code == 200
+        accepted = client.get(path, headers={"X-Indra-API-Key": "local-test-key"})
+        if suffix == "analysis":
+            assert accepted.status_code == 202
+            from src.jobs.view_worker import ViewWorker
+            ViewWorker(repository).run_once()
+        else:
+            assert accepted.status_code == 200
         assert client.get(path, params={"api_key": "local-test-key"}).status_code == 200
 
 

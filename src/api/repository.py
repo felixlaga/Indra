@@ -46,6 +46,8 @@ from .models import (
 )
 from .research_loop import ResearchLoopBridge
 from .research_memory import MemoryResearchWrites
+from .event_repository import MemoryEventReads
+from .view_repository import MemoryViewWrites
 
 if TYPE_CHECKING:
     from ..orchestration.models import LoopState
@@ -99,7 +101,13 @@ class ProductRepository(Protocol):
 
     def get_session(self, session_id: str) -> ResearchSession: ...
 
-    def get_session_snapshot(self, session_id: str) -> SessionSnapshot: ...
+    def get_session_snapshot(self, session_id: str, *, event_limit: int | None = None) -> SessionSnapshot: ...
+
+    def request_views(self, session_id: str, *, retry: bool = False) -> dict: ...
+
+    def lease_views(self) -> dict | None: ...
+
+    def finish_views(self, leased: dict, result: dict | None = None, error: str | None = None) -> bool: ...
 
     def get_runtime_loop_binding(self, session_id: str) -> RuntimeLoopBinding: ...
 
@@ -172,6 +180,12 @@ class ProductRepository(Protocol):
 
     def list_events(self, session_id: str) -> list[Event]: ...
 
+    def event_position(self, session_id: str, cursor: str | None = None) -> int: ...
+
+    def read_events(self, session_id: str, *, after: int = 0, before: int | None = None, limit: int = 100) -> list[Event]: ...
+
+    def view_revision(self, session_id: str) -> int: ...
+
     def subscribe_events(
         self,
         session_id: str,
@@ -187,7 +201,7 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class InMemoryRepository(MemoryResearchWrites):
+class InMemoryRepository(MemoryResearchWrites, MemoryEventReads, MemoryViewWrites):
     """Process-local repository used until durable storage is added."""
 
     def __init__(
@@ -207,6 +221,7 @@ class InMemoryRepository(MemoryResearchWrites):
         self._claim_evidence: dict[str, ClaimEvidence] = {}
         self._jobs: dict[str, Job] = {}
         self._events: dict[str, Event] = {}
+        self._research_views: dict[str, dict] = {}
         self._event_subscribers: dict[str, list[Queue[Event]]] = {}
         self._runtime_loop_bindings: dict[str, RuntimeLoopBinding] = {}
         self._runtime_loop_states: dict[str, LoopState] = {}
@@ -322,11 +337,13 @@ class InMemoryRepository(MemoryResearchWrites):
         with self._lock:
             return self._get_session_unlocked(session_id)
 
-    def get_session_snapshot(self, session_id: str) -> SessionSnapshot:
+    def get_session_snapshot(self, session_id: str, *, event_limit: int | None = None) -> SessionSnapshot:
         """Get reconstructable session state."""
 
         with self._lock:
             session = self._get_session_unlocked(session_id)
+            events = self._list_events_unlocked(session_id)
+            recent = events if event_limit is None else (events[-event_limit:] if event_limit else [])
             return SessionSnapshot(
                 session=session,
                 runtime_loop=self._runtime_loop_bindings.get(session_id),
@@ -338,7 +355,11 @@ class InMemoryRepository(MemoryResearchWrites):
                 claim_evidence=self._list_claim_evidence_for_session_unlocked(
                     session_id
                 ),
-                events=self._list_events_unlocked(session_id),
+                events=recent,
+                event_cursor=events[-1].sequence if events else 0,
+                events_has_more=len(recent) < len(events),
+                validated_claim_ids=sorted({e.payload["claim_id"] for e in events
+                    if e.event_type == "claim_validated" and "claim_id" in e.payload}),
             )
 
     def get_runtime_loop_binding(self, session_id: str) -> RuntimeLoopBinding:
@@ -1209,7 +1230,7 @@ class InMemoryRepository(MemoryResearchWrites):
             for event in self._events.values()
             if event.session_id == session_id
         ]
-        return sorted(events, key=lambda event: event.created_at)
+        return sorted(events, key=lambda event: event.sequence)
 
     def _create_event_unlocked(
         self,
@@ -1222,6 +1243,7 @@ class InMemoryRepository(MemoryResearchWrites):
     ) -> Event:
         event = Event(
             id=self._new_id("evt"),
+            sequence=max((e.sequence for e in self._events.values() if e.session_id == session_id), default=0) + 1,
             session_id=session_id,
             branch_id=branch_id,
             paper_id=paper_id,

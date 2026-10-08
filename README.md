@@ -13,6 +13,8 @@ Indra is not primarily a generic chatbot or writing assistant. Its product surfa
 - FastAPI product API with in-memory and Postgres repositories.
 - Durable background-job contracts and worker leasing primitives.
 - Next.js project and session dashboard.
+- Ordered, resumable event delivery with PostgreSQL notifications and bounded history reads.
+- Background map/advisor computation with durable revisioned caching and a separate view worker.
 - Atomic claim extraction, evidence retrieval, claim validation, and claim inspection.
 - Citation/reference research maps, timelines, clusters, paper roles, and related-paper recommendations.
 - Contradiction, weak-evidence, gap, open-problem, recommendation, and speculative-hypothesis analysis.
@@ -93,7 +95,7 @@ HALUGATE_URL=http://localhost:8000
 ## Run the API
 
 ```bash
-uvicorn src.api.app:app --reload --port 8000
+uvicorn src.api.app:app --reload --port 8000 --timeout-graceful-shutdown 5
 ```
 
 Major endpoints:
@@ -120,7 +122,7 @@ The default repository backend is process-local memory. Set `INDRA_REPOSITORY_BA
 
 ## Run the research worker
 
-The API and standalone worker must use the same Postgres database. Initialize it with `python -m src.api.migrate` (or `--without-vectors` on Postgres without pgvector), then run `python -m src.jobs.research_worker`. See [Phase 1](docs/research/PHASE_1.md) for bounds, failure recovery, and verification details. The [Phase 2 session hub](docs/research/PHASE_2.md) adds research views, linked evidence inspectors and the full claim ledger.
+The API and standalone workers must use the same Postgres database. Initialize it with `python -m src.api.migrate` (or `--without-vectors` on Postgres without pgvector), then run `python -m src.jobs.research_worker` and `python -m src.jobs.view_worker` in separate terminals. The view worker prepares and caches maps and advisor results; the dashboard shows pending work and supports retries. See [Phase 1](docs/research/PHASE_1.md) for research bounds, [Phase 2](docs/research/PHASE_2.md) for the session hub, and [Phases 3–4](docs/research/PHASE_3_4.md) for event delivery, migration instructions, caching, and verification.
 
 ## Run the dashboard
 
@@ -234,12 +236,12 @@ Implementation notes:
 ## Production-hardening work still required
 
 - Expand the bounded product worker into recursive Scout and hypothesis orchestration.
-- Scale the resumable durable-event polling transport with pagination and LISTEN/NOTIFY.
+- Add database pagination for paper/claim snapshots and graph virtualization for larger sessions.
 - Add authentication and project authorization.
 - Add dense/vector retrieval and scanned-document handling beyond page-numbered PDF text.
 - Add calibrated domain-specific inference where appropriate.
 - Deploy Postgres, migrations, API, workers, and dashboard as one system.
-- Add large-session caching and asynchronous export jobs if session scale requires them.
+- Add cache eviction/versioning and asynchronous export jobs if session scale requires them.
 
 ## Core rule
 

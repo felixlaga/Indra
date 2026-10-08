@@ -81,12 +81,15 @@ async def serve(once=False, poll_seconds=2):
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, current.cancel)
-    while True:
-        job = await worker.run_once()
-        if once:
-            return
-        if job is None:
-            await asyncio.sleep(poll_seconds)
+    try:
+        while True:
+            job = await worker.run_once()
+            if once:
+                return
+            if job is None:
+                await asyncio.sleep(poll_seconds)
+    finally:
+        repository.close()
 
 
 def main():

@@ -44,6 +44,8 @@ from .models import (
 from .repository import ConflictError, EventSubscription, NotFoundError, utc_now
 from .research_loop import ResearchLoopBridge
 from .research_postgres import PostgresResearchWrites
+from .event_repository import PostgresEventReads
+from .view_repository import PostgresViewWrites
 
 ConnectionFactory = Callable[[], ContextManager[Any]]
 
@@ -66,7 +68,7 @@ def _jsonb(value: Any) -> Any:
     return Jsonb(value)
 
 
-class PostgresRepository(PostgresResearchWrites):
+class PostgresRepository(PostgresResearchWrites, PostgresEventReads, PostgresViewWrites):
     """Durable repository using the Phase 2 Postgres schema."""
 
     def __init__(
@@ -87,6 +89,8 @@ class PostgresRepository(PostgresResearchWrites):
         self._claim_verifier = claim_verifier or ClaimVerifier()
         self._event_subscribers: dict[str, list[Queue[Event]]] = {}
         self._lock = Lock()
+        self._pool = None
+        self._pool_lock = Lock()
 
     def create_project(self, payload: ProjectCreate) -> Project:
         with self._connect() as conn:
@@ -254,9 +258,13 @@ class PostgresRepository(PostgresResearchWrites):
         with self._connect() as conn:
             return self._get_session(conn, session_id)
 
-    def get_session_snapshot(self, session_id: str) -> SessionSnapshot:
+    def get_session_snapshot(self, session_id: str, *, event_limit: int | None = None) -> SessionSnapshot:
         with self._connect() as conn:
+            self._execute(conn, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             session = self._get_session(conn, session_id)
+            events = self._list_events(conn, session_id, limit=event_limit)
+            latest = self._fetch_one(conn, "SELECT COALESCE(max(sequence),0) AS position FROM session_event_counters WHERE session_id=%s", (session_id,))["position"]
+            checked = self._fetch_all(conn, "SELECT DISTINCT payload->>'claim_id' AS id FROM events WHERE session_id=%s AND event_type='claim_validated'", (session_id,))
             return SessionSnapshot(
                 session=session,
                 runtime_loop=self._get_runtime_loop_binding(conn, session_id),
@@ -266,7 +274,10 @@ class PostgresRepository(PostgresResearchWrites):
                 summaries=self._list_summaries(conn, session_id),
                 claims=self._list_claims(conn, session_id),
                 claim_evidence=self._list_claim_evidence_for_session(conn, session_id),
-                events=self._list_events(conn, session_id),
+                events=events,
+                event_cursor=latest,
+                events_has_more=bool(latest and (not events or events[0].sequence > 1)),
+                validated_claim_ids=[row["id"] for row in checked if row["id"]],
             )
 
     def get_runtime_loop_binding(self, session_id: str) -> RuntimeLoopBinding:
@@ -928,14 +939,25 @@ class PostgresRepository(PostgresResearchWrites):
         if self._connection_factory is not None:
             return self._connection_factory()
         try:
-            import psycopg
+            from psycopg_pool import ConnectionPool
             from psycopg.rows import dict_row
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "Postgres backend requires psycopg. Run dependency installation "
                 "before using INDRA_REPOSITORY_BACKEND=postgres."
             ) from exc
-        return psycopg.connect(self._dsn, row_factory=dict_row)
+        with self._pool_lock:
+            if self._pool is None:
+                self._pool = ConnectionPool(self._dsn, min_size=0, max_size=8,
+                    timeout=5, max_waiting=32, open=True,
+                    kwargs={"row_factory": dict_row, "connect_timeout": 5})
+            return self._pool.connection()
+
+    def close(self) -> None:
+        with self._pool_lock:
+            if self._pool:
+                self._pool.close()
+                self._pool = None
 
     def _execute(self, conn: Any, sql: str, params: tuple = ()) -> None:
         with conn.cursor() as cur:
@@ -1424,10 +1446,13 @@ class PostgresRepository(PostgresResearchWrites):
         )
         return [_claim_evidence_from_row(row) for row in rows]
 
-    def _list_events(self, conn: Any, session_id: str) -> list[Event]:
+    def _list_events(self, conn: Any, session_id: str, *, limit: int | None = None) -> list[Event]:
+        if limit is not None:
+            rows = self._fetch_all(conn, "SELECT * FROM events WHERE session_id=%s ORDER BY sequence DESC LIMIT %s", (session_id, limit))
+            return [_event_from_row(row) for row in reversed(rows)]
         rows = self._fetch_all(
             conn,
-            "SELECT * FROM events WHERE session_id = %s ORDER BY created_at",
+            "SELECT * FROM events WHERE session_id = %s ORDER BY sequence",
             (session_id,),
         )
         return [_event_from_row(row) for row in rows]
@@ -1683,6 +1708,7 @@ def _event_from_row(row: dict) -> Event:
         branch_id=str(row["branch_id"]) if row.get("branch_id") else None,
         paper_id=str(row["paper_id"]) if row.get("paper_id") else None,
         event_type=row["event_type"],
+        sequence=row.get("sequence", 0),
         payload=dict(row.get("payload") or {}),
         severity=row["severity"],
         created_at=row["created_at"],

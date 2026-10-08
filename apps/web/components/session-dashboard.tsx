@@ -68,6 +68,8 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
   const [revision, setRevision] = useState(0);
   const [retry, setRetry] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const [olderBusy, setOlderBusy] = useState(false);
+  const [olderError, setOlderError] = useState<string | null>(null);
   const seen = useRef(new Map<string, EventRecord>());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestId = useRef(0);
@@ -86,8 +88,9 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
       if (token !== requestId.current) return;
       for (const event of next.events) seen.current.set(event.id, event);
       next.events = [...seen.current.values()].sort((a, b) =>
-        a.created_at.localeCompare(b.created_at),
+        (a.sequence ?? 0) - (b.sequence ?? 0) || a.created_at.localeCompare(b.created_at),
       );
+      next.events_has_more = (next.events[0]?.sequence ?? 1) > 1;
       setSnapshot(next);
       setError(null);
       setRevision((value) => value + 1);
@@ -138,7 +141,7 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
           : current,
       );
       // Coalesce bursts without postponing refresh forever; progress is patched locally.
-      if (event.event_type !== "research_progress" && !timer.current)
+      if (event.event_type !== "research_progress" && !event.event_type.startsWith("derived_view_") && !timer.current)
         timer.current = setTimeout(() => {
           timer.current = null;
           void load();
@@ -146,17 +149,19 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
     },
     [load],
   );
-  const stream = useSessionEventStream(sessionId, onEvent);
+  const stream = useSessionEventStream(sessionId, onEvent, snapshot?.session.id === sessionId ? snapshot.event_cursor : undefined);
   useEffect(() => {
     if (view !== "graph" && view !== "claims" && type !== "hypothesis") return;
     let active = true;
+    const controller = new AbortController();
     setDerivedBusy(true);
     const requests: Promise<unknown>[] = [];
     if (view === "graph") {
       setMapError(null);
+      setMap(null);
       requests.push(
         indraApi
-          .getResearchMap(sessionId)
+          .getResearchMap(sessionId, controller.signal)
           .then((value) => {
             if (active) setMap(value);
           })
@@ -172,9 +177,10 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
     }
     if (view === "claims" || type === "hypothesis") {
       setAdviceError(null);
+      setAdvice(null);
       requests.push(
         indraApi
-          .getResearchAdvice(sessionId)
+          .getResearchAdvice(sessionId, controller.signal)
           .then((value) => {
             if (active) setAdvice(value);
           })
@@ -193,8 +199,36 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
     });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [sessionId, view, type, revision, retry]);
+  async function retryDerived() {
+    try {
+      await indraApi.retryResearchViews(sessionId);
+      setRetry((n) => n + 1);
+    } catch (caught) {
+      setMapError(caught instanceof Error ? caught.message : "Retry failed");
+      setAdviceError(caught instanceof Error ? caught.message : "Retry failed");
+    }
+  }
+  async function loadOlderEvents() {
+    const before = snapshot?.events[0]?.sequence;
+    if (!before) return;
+    const token = requestId.current;
+    setOlderBusy(true);
+    setOlderError(null);
+    try {
+      const older = await indraApi.getOlderEvents(sessionId, before);
+      if (token !== requestId.current) return;
+      for (const event of older) seen.current.set(event.id, event);
+      setSnapshot((current) => current && ({ ...current,
+        events: [...seen.current.values()].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0)),
+        events_has_more: older.length === 200 && (older[0]?.sequence ?? 1) > 1,
+      }));
+    } catch (caught) {
+      if (token === requestId.current) setOlderError(caught instanceof Error ? caught.message : "Older events could not load");
+    } finally { setOlderBusy(false); }
+  }
   function navigate(changes: Record<string, string | null>) {
     const next = new URLSearchParams(params.toString());
     for (const [key, value] of Object.entries(changes)) {
@@ -272,9 +306,9 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
       )
     : 0;
   const validationCount = new Set(
-    snapshot.events
+    [...(snapshot.validated_claim_ids ?? []), ...snapshot.events
       .filter((event) => event.event_type === "claim_validated")
-      .map((event) => event.payload.claim_id),
+      .map((event) => event.payload.claim_id)],
   ).size;
   return (
     <main className="session-hub">
@@ -453,7 +487,7 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
                       adviceError={adviceError}
                       loading={derivedBusy}
                       select={select}
-                      retry={() => setRetry((n) => n + 1)}
+                      retry={() => void retryDerived()}
                     />
                   )}
                   {view === "graph" && (
@@ -466,7 +500,7 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
                       {mapError && (
                         <ErrorPanel
                           message={mapError}
-                          onRetry={() => setRetry((n) => n + 1)}
+                          onRetry={() => void retryDerived()}
                         />
                       )}{" "}
                       {map && (
@@ -508,7 +542,7 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
           {type === "hypothesis" && adviceError && (
             <ErrorPanel
               message={adviceError}
-              onRetry={() => setRetry((n) => n + 1)}
+              onRetry={() => void retryDerived()}
             />
           )}
         </aside>
@@ -576,9 +610,11 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
                       (event) => event.event_type === "claim_validated",
                     ) && (
                       <p className="hub-note">
-                        No validation checks recorded yet.
+                        No validation checks in the loaded event history.
                       </p>
                     )}
+                  {snapshot.events_has_more && <button className="button button-secondary" disabled={olderBusy} onClick={() => void loadOlderEvents()}>{olderBusy ? "Loading older events…" : "Load older events"}</button>}
+                  {olderError && <p role="alert">{olderError}</p>}
                 </div>
               )}
             {drawer === item.id && item.id === "jobs" && (

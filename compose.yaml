@@ -1,0 +1,92 @@
+# Indra as one system: Postgres (with pgvector), migrations, the API, both workers
+# and the dashboard. Only the dashboard is published; the API stays internal.
+#
+#   cp deploy/.env.example deploy/.env    # then fill in the secrets
+#   docker compose --env-file deploy/.env up -d --build
+#
+# See docs/research/PHASE_8.md.
+
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: docker/Dockerfile.backend
+  image: indra-backend:local
+  restart: unless-stopped
+  environment: &backend-env
+    INDRA_REPOSITORY_BACKEND: postgres
+    INDRA_DATABASE_URL: postgresql://indra:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/indra
+    INDRA_AUTH_MODE: ${INDRA_AUTH_MODE:-accounts}
+    INDRA_ALLOW_SIGNUP: ${INDRA_ALLOW_SIGNUP:-false}
+    INDRA_API_KEY: ${INDRA_API_KEY:?Set INDRA_API_KEY in deploy/.env}
+    OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+    OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+    SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
+    INDRA_CONTACT_EMAIL: ${INDRA_CONTACT_EMAIL:-}
+    INDRA_EMBEDDING_MODEL: ${INDRA_EMBEDDING_MODEL:-}
+  volumes:
+    - models:/home/indra/.cache/huggingface
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: indra
+      POSTGRES_DB: indra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U indra -d indra"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    <<: *backend
+    restart: "no"
+    command: ["python", "-m", "src.api.migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *backend
+    # Bound to this machine only, for CLI use; browsers go through the dashboard.
+    ports:
+      - "127.0.0.1:${INDRA_API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  research-worker:
+    <<: *backend
+    command: ["python", "-m", "src.jobs.research_worker"]
+
+  view-worker:
+    <<: *backend
+    command: ["python", "-m", "src.jobs.view_worker"]
+
+  web:
+    build:
+      context: apps/web
+    image: indra-web:local
+    restart: unless-stopped
+    environment:
+      INDRA_API_URL: http://api:8000
+      INDRA_API_KEY: ${INDRA_API_KEY:?Set INDRA_API_KEY in deploy/.env}
+    ports:
+      - "${INDRA_WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres:
+  models:

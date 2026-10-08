@@ -252,7 +252,7 @@ Implementation notes:
 
 ## Remaining work
 
-- Measure live model quality of Scout plans, hypotheses and claim checks against labelled examples from a research field (see `src/research/evaluate.py`; the labels need a domain expert).
+- Label claims from your own sessions and measure claim-check accuracy in your field ([how](docs/research/ACCURACY.md)); live quality of Scout plans and hypotheses is also unmeasured.
 - Password reset, sign-in rate limiting and project sharing for multi-user deployments.
 - Raise the research limits, and with them revisit [Phase 9](docs/research/PHASE_9.md)'s measurements, only if larger sessions are needed.
 

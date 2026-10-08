@@ -7,32 +7,43 @@ writes an overview and cross-paper hypotheses.
 
 import asyncio
 import logging
-from itertools import zip_longest
+
+import httpx
 
 from ..api.claim_validation_models import ClaimAutoValidationRequest
 from ..api.claim_validation_routes import validate_automatically
 from ..api.models import JobType
 from ..claims import ClaimExtractor
-from ..domain.papers import normalize_title
 from .full_text import fetch_full_text
 from .model import ModelRateLimited, ModelUnavailable
 from .models import (
     ClaimDraft,
+    DecisionRecord,
     PaperResult,
+    PaperSelection,
     PaperSynthesis,
     ResearchLimits,
     ScoutPlan,
+    SearchPlan,
     SessionSynthesis,
     SynthesisRecord,
     stable_id,
 )
 from .providers import search_provider
-
-logger = logging.getLogger(__name__)
-
-
-def title_key(title: str | None) -> str:
-    return " ".join((normalize_title(title) or "").split())
+from .retrieval import (
+    MAX_CANDIDATES,
+    QUERY_INSTRUCTION,
+    SELECTION_INSTRUCTION,
+    accept_selection,
+    candidate_pool,
+    clean_queries,
+    fallback_queries,
+    needs_plan,
+    rank_candidates,
+    ranked_choice,
+    selection_input,
+    title_key,
+)
 from .scouts import (
     PLAN_INSTRUCTION,
     SYNTHESIS_INSTRUCTION,
@@ -44,6 +55,10 @@ from .scouts import (
     skipped_synthesis,
     synthesis_input,
 )
+
+logger = logging.getLogger(__name__)
+# A failed planning or selection request falls back to term ranking instead of failing the job.
+MODEL_REQUEST_ERRORS = (ValueError, RuntimeError, httpx.HTTPError)
 
 
 class ModelBudgetExhausted(ModelUnavailable):
@@ -174,7 +189,6 @@ class ResearchPipeline:
         snapshot = repo.get_session_snapshot(session.id)
         selected = [p.paper for p in snapshot.papers if p.branch_id == leased.branch_id]
         if not progress.get("search_complete"):
-            checkpoint(stage="search", message=f"Searching academic sources for “{query}”")
             # Scout branches look for new literature; papers read elsewhere are already checked.
             known = (
                 set()
@@ -185,61 +199,93 @@ class ResearchPipeline:
                     if p.branch_id != leased.branch_id
                 }
             )
-            wanted = limits.papers_for(root=root)
-            search_limits = limits.model_copy(
-                update={"max_papers": min(limits.search_limit, wanted + len(known))}
+            if not progress.get("search_queries"):
+                checkpoint(stage="search", message=f"Planning searches for “{query}”")
+                topic, queries, method = await self._search_queries(query, model, stop_model)
+                checkpoint(search_topic=topic, search_queries=queries, query_method=method)
+            topic, queries = progress["search_topic"], progress["search_queries"]
+            checkpoint(
+                stage="search",
+                message="Searching academic sources for "
+                + "; ".join(f"“{q}”" for q in queries),
             )
+            # Every query on every source fills the candidate pool; choosing comes after.
+            search_limits = limits.model_copy(update={"max_papers": limits.search_limit})
+            calls = [(name, q) for name in session.source_providers for q in queries]
             outcomes = await asyncio.gather(
-                *(
-                    self.search(name, query, session.filters, search_limits)
-                    for name in session.source_providers
-                ),
+                *(self.search(name, q, session.filters, search_limits) for name, q in calls),
                 return_exceptions=True,
             )
-            warnings, results, successes = [], [], 0
-            for name, outcome in zip(session.source_providers, outcomes):
-                if isinstance(outcome, Exception):
-                    warnings.append(f"{name}: {type(outcome).__name__}")
-                else:
-                    successes += 1
+            warnings, results = [], []
+            for (name, _), outcome in zip(calls, outcomes):
+                if not isinstance(outcome, Exception):
                     results.append(outcome)
-            if not successes:
+                elif (warning := f"{name}: {type(outcome).__name__}") not in warnings:
+                    warnings.append(warning)
+            if not results:
                 raise RuntimeError(
                     "All selected search providers failed: " + "; ".join(warnings)
                 )
-            # Interleave sources by rank so each contributes to a small selection.
-            found = [
-                p for ranked in zip_longest(*results) for p in ranked if p is not None
-            ]
-            unique = {p.canonical_key: p for p in selected}
-            # A preprint and its journal version have different IDs but one title.
-            titles = {title_key(p.title) for p in selected} | {
-                title_key(p.paper.title)
-                for p in snapshot.papers
-                if p.paper.canonical_key in known
-            }
-            for paper in found:
-                title = title_key(paper.title)
-                if paper.canonical_key in known or (
-                    paper.canonical_key not in unique and title in titles
-                ):
-                    continue
-                unique.setdefault(paper.canonical_key, paper)
-                titles.add(title)
-            selected = list(unique.values())[:wanted]
-            if self.citations is not None and selected:
+            candidates = candidate_pool(
+                results,
+                exclude_keys=known | {p.canonical_key for p in selected},
+                exclude_titles={title_key(p.title) for p in selected}
+                | {
+                    title_key(p.paper.title)
+                    for p in snapshot.papers
+                    if p.paper.canonical_key in known
+                },
+            )
+            wanted = max(0, limits.papers_for(root=root) - len(selected))
+            checkpoint(
+                stage="select",
+                message=f"Ranking {len(candidates)} candidate papers",
+            )
+            ranked = await rank_candidates(query, topic, candidates, self.embedder)
+            chosen = [(c, None) for c in ranked_choice(ranked, wanted)]
+            selection = None
+            if model and len(ranked) > wanted > 0:
+                checkpoint(
+                    message=f"Choosing up to {wanted} of {len(ranked)} candidate papers"
+                )
+                shown = ranked[:MAX_CANDIDATES]
+                try:
+                    selection = await model.generate(
+                        PaperSelection,
+                        SELECTION_INSTRUCTION.format(wanted=wanted),
+                        selection_input(query, shown, wanted),
+                    )
+                except ModelUnavailable as exc:
+                    stop_model(exc)
+                except MODEL_REQUEST_ERRORS as exc:
+                    logger.warning("Paper selection failed; using ranking: %s", exc)
+                    warnings.append(f"selection: {type(exc).__name__}")
+                if selection and (picked := accept_selection(selection[0], shown, wanted)):
+                    chosen = picked
+                else:
+                    selection = None
+            new = [c.paper for c, _ in chosen]
+            if self.citations is not None and new:
                 try:
                     async with asyncio.timeout(limits.provider_timeout_seconds):
-                        selected = await self.citations(selected)
+                        new = await self.citations(new)
                 except Exception as exc:
                     warnings.append(f"citations: {type(exc).__name__}")
-            for paper in selected:
+            for paper in new:
                 paper.id = repo.save_research_paper(leased, PaperResult(paper=paper))
+            repo.record_research_decision(
+                leased,
+                self._selection_decision(
+                    leased, session, queries, ranked, chosen, new, selection
+                ),
+                max_branches=limits.max_branches,
+            )
+            selected = selected + new
             checkpoint(
                 search_complete=True,
                 selected_paper_ids=[p.id for p in selected],
                 warnings=warnings,
-                message=f"Selected {len(selected)} papers",
+                message=f"Selected {len(selected)} papers from {len(ranked)} candidates",
                 stage="select",
             )
         else:
@@ -396,6 +442,70 @@ class ResearchPipeline:
         if progress.get("scout_message"):
             message += f". {progress['scout_message']}"
         checkpoint(stage="complete", message=message, verification_mode=mode)
+
+    async def _search_queries(self, query, model, stop_model):
+        """Search a short query as written; turn a long question into keyword queries."""
+
+        if not needs_plan(query):
+            return query, [query], "as_written"
+        fallback = fallback_queries(query)
+        if model:
+            try:
+                plan, _ = await model.generate(
+                    SearchPlan, QUERY_INSTRUCTION, {"question": query}
+                )
+            except ModelUnavailable as exc:
+                stop_model(exc)
+            except MODEL_REQUEST_ERRORS as exc:
+                logger.warning("Query planning failed; using key terms: %s", exc)
+            else:
+                if queries := clean_queries(plan.queries):
+                    return plan.topic.strip() or queries[0], queries, "model"
+        return fallback[0], fallback, "key_terms"
+
+    def _selection_decision(self, leased, session, queries, ranked, chosen, new, selection):
+        """Record which candidates were read and why, for the branch's Scout view."""
+
+        picked = {c.paper.canonical_key for c, _ in chosen}
+        by_model = selection is not None
+        details = {
+            "queries": queries,
+            "sources": list(session.source_providers),
+            "candidates": len(ranked),
+            "method": "model" if by_model else "ranking",
+            "selected": [
+                {
+                    "paper_id": paper.id,
+                    "title": paper.title,
+                    "reason": reason,
+                }
+                for (_, reason), paper in zip(chosen, new)
+            ],
+        }
+        if by_model:
+            rationale = selection[0].assessment
+        elif ranked and not any(c.on_topic for c in ranked):
+            rationale = "No candidate mentioned the question's topic terms; the best-ranked were kept."
+        else:
+            rationale = "Ranked by the question's topic terms and, when enabled, meaning similarity."
+        return DecisionRecord(
+            id=stable_id(leased.id, "paper-selection"),
+            branch_id=leased.branch_id,
+            decision_type="paper_selection",
+            decision=f"Read {len(new)} of {len(ranked)} candidate papers",
+            rationale=rationale,
+            input_summary="Searched "
+            + ", ".join(session.source_providers)
+            + " for "
+            + "; ".join(f"“{q}”" for q in queries),
+            alternatives=[
+                {"title": c.paper.title, "reason": "Not chosen"}
+                for c in ranked[:MAX_CANDIDATES]
+                if c.paper.canonical_key not in picked
+            ][:10],
+            details=details,
+            provenance=selection[1] if by_model else {"provider": "local", "model": "ranking"},
+        )
 
     async def _plan(self, leased, session, branch, limits, planner, checkpoint):
         """Ask the model which follow-up questions this branch's findings justify."""

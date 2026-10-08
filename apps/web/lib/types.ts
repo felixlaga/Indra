@@ -358,7 +358,7 @@ export interface AgentDecision {
   decision: string;
   rationale?: string | null;
   input_summary?: string | null;
-  alternatives: Array<{ query?: string; hypothesis?: string; reason?: string }>;
+  alternatives: Array<{ query?: string; hypothesis?: string; title?: string; reason?: string }>;
   details: { child_branch_ids?: string[]; hypothesis_ids?: string[] } & Record<string, unknown>;
   generation_provenance?: Record<string, unknown> | null;
   created_at: string;

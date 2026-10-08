@@ -9,7 +9,7 @@ Phase 6 widens what a session can find and how well its evidence search works.
 - Abstracts are rebuilt from OpenAlex's inverted index; authors, venue, year, citation and reference counts and the best open-access PDF link are kept.
 - A work whose DOI is arXiv's DataCite DOI (`10.48550/arxiv.*`) is keyed as `arxiv:<id>`, the same key the arXiv source produces, so one preprint is stored once.
 - Session date, citation-count and open-access filters map to OpenAlex filters.
-- With several sources, results are interleaved by rank before the paper limit is applied, so each source contributes. A preprint and its journal version with the same normalized title are read once.
+- With several sources, results are interleaved by rank and merged into one candidate pool; a preprint and its journal version with the same normalized title are read once. Since [paper selection](PAPER_SELECTION.md), the branch then chooses from that pool instead of taking the first results.
 - `INDRA_CONTACT_EMAIL`, when set, is sent as OpenAlex's `mailto` to use its faster "polite pool". Nothing is sent when it is blank.
 
 ## Observed citations

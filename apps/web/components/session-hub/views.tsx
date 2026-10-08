@@ -103,6 +103,39 @@ function ScoutDecision({ decision }: { decision: AgentDecision }) {
     </div>
   );
 }
+interface SelectedPaper {
+  paper_id?: string;
+  title: string;
+  reason?: string | null;
+}
+function PaperSelectionNote({ decision }: { decision: AgentDecision }) {
+  const queries = (decision.details.queries as string[] | undefined) ?? [];
+  const selected = (decision.details.selected as SelectedPaper[] | undefined) ?? [];
+  const byModel = decision.details.method === "model";
+  return (
+    <div className="hub-scout-decision">
+      <p>
+        <strong>Search:</strong>{" "}
+        {queries.map((query) => `“${query}”`).join(" · ")}. {decision.decision}
+        {byModel ? ", chosen by the model." : ", chosen by relevance ranking."}
+      </p>
+      {!!selected.length && (
+        <details>
+          <summary>Why these papers</summary>
+          {decision.rationale && <p>{decision.rationale}</p>}
+          <ul>
+            {selected.map((item) => (
+              <li key={item.paper_id ?? item.title}>
+                {item.title}
+                {item.reason && <> — {item.reason}</>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
 function SessionSynthesis({
   snapshot,
   select,
@@ -180,6 +213,9 @@ function ScoutNode({
   const decision = snapshot.decisions?.find(
     (item) => item.decision_type === "branch_split" && item.branch_id === node.id,
   );
+  const selection = snapshot.decisions?.find(
+    (item) => item.decision_type === "paper_selection" && item.branch_id === node.id,
+  );
   return (
     <li>
       <article className="hub-scout-node">
@@ -192,6 +228,7 @@ function ScoutNode({
         </button>
         <StatusBadge status={node.status} />
         <p>{node.rationale || "No rationale recorded."}</p>
+        {selection && <PaperSelectionNote decision={selection} />}
         {decision && <ScoutDecision decision={decision} />}
         <small>
           {papers.length} papers ·{" "}

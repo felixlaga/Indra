@@ -170,6 +170,25 @@ class ArXivAdapter(PaperSearchProvider, PDFExtractor):
         Returns:
             List of PaperSearchResult objects
         """
+        results = await self._search(query, filters, limit)
+        return [_result_to_paper_search_result(r) for r in results]
+
+    async def search_details(
+        self,
+        query: str,
+        filters: SearchFilters | None = None,
+        limit: int = 100,
+    ) -> list[PaperDetails]:
+        """Search arXiv and keep full details, since search results already carry them."""
+        results = await self._search(query, filters, limit)
+        return [_result_to_paper_details(r) for r in results]
+
+    async def _search(
+        self,
+        query: str,
+        filters: SearchFilters | None,
+        limit: int,
+    ) -> list[arxiv.Result]:
         self._ensure_entered()
 
         # Build arXiv-specific query from filters
@@ -187,14 +206,12 @@ class ArXivAdapter(PaperSearchProvider, PDFExtractor):
             # If filtering by date, sort by submission date
             sort_by = arxiv.SortCriterion.SubmittedDate
 
-        results = await self._client.search(
+        return await self._client.search(
             query=arxiv_query,
             max_results=limit,
             sort_by=sort_by,
             categories=categories,
         )
-
-        return [_result_to_paper_search_result(r) for r in results]
 
     def _build_arxiv_query(
         self,

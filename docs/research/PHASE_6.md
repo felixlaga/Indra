@@ -21,7 +21,7 @@ After a branch selects papers, the worker looks them up in OpenAlex in one batch
 Set `INDRA_EMBEDDING_MODEL` (for example `sentence-transformers/all-MiniLM-L6-v2`) for the API and worker. The model is downloaded once into the Hugging Face cache and runs locally on CPU through the existing `transformers`/`torch` dependencies; it stays off when the variable is blank.
 
 - Passage embeddings are computed when a paper is read and stored in `paper_chunks.embedding` (pgvector `vector`, or a float array in `--without-vectors` mode). They are never sent to API clients.
-- A passage now qualifies as candidate evidence on word overlap (as before) **or** on meaning (cosine ≥ 0.5). Lexical and semantic ranks are combined with reciprocal rank fusion; exact-wording matches win ties. Each validation trace records `retrieval: hybrid:<model>` or `lexical`, and per-passage semantic scores.
+- A passage now qualifies as candidate evidence on word overlap (as before) **or** on meaning (cosine ≥ 0.35; with all-MiniLM-L6-v2, relevant scientific paraphrases scored 0.48–0.50 and unrelated passages ≤ 0.20). Lexical and semantic ranks are combined with reciprocal rank fusion; exact-wording matches win ties. Each validation trace records `retrieval: hybrid:<model>` or `lexical`, and per-passage semantic scores.
 - Retrieval still only nominates passages. Support or contradiction is decided by the verifier, never by similarity.
 - If the model cannot load, the worker logs it, records `embedding_warning`, and continues with lexical retrieval.
 

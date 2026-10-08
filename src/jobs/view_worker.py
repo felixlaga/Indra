@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from ..analysis import ResearchAdviceBuilder
 from ..api.repository_factory import create_repository
 from ..api.repository import ProductRepository
+from ..api.view_repository import BUILDER_VERSION
 from ..maps import ResearchMapBuilder
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class ViewWorker:
                 {
                     "map": research_map.model_dump(mode="json"),
                     "analysis": advice.model_dump(mode="json"),
+                    "builder_version": BUILDER_VERSION,
                 },
             )
         except Exception:

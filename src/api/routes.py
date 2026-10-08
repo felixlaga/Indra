@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from .event_stream import (
     EVENT_STREAM_MEDIA_TYPE,
@@ -140,15 +140,33 @@ def get_session(session_id: str, request: Request) -> ResearchSession:
         raise
 
 
+# What the dashboard reads from each evidence item; the passage text is fetched per claim.
+COMPACT_EVIDENCE_FIELDS = {"id", "claim_id", "paper_id", "relation", "source_type"}
+
+
 @router.get("/sessions/{session_id}/state", response_model=SessionSnapshot)
-def get_session_state(session_id: str, request: Request) -> SessionSnapshot:
+def get_session_state(
+    session_id: str,
+    request: Request,
+    compact: bool = Query(
+        False,
+        description="Omit evidence passages, which are most of a large session's snapshot.",
+    ),
+):
     """Get reconstructable session state."""
 
     try:
-        return get_repository(request).get_session_snapshot(session_id, event_limit=200)
+        snapshot = get_repository(request).get_session_snapshot(session_id, event_limit=200)
     except RepositoryError as exc:
         handle_repository_error(exc)
         raise
+    if not compact:
+        return snapshot
+    return JSONResponse(
+        snapshot.model_dump(
+            mode="json", exclude={"claim_evidence": {"__all__": set(ClaimEvidence.model_fields) - COMPACT_EVIDENCE_FIELDS}}
+        )
+    )
 
 
 @router.get("/sessions/{session_id}/loop", response_model=RuntimeLoopBinding)

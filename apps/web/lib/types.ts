@@ -135,6 +135,11 @@ export interface ClaimEvidence {
   created_at: string;
 }
 
+export type SnapshotEvidence = Pick<
+  ClaimEvidence,
+  "id" | "claim_id" | "paper_id" | "relation" | "source_type"
+>;
+
 export interface ClaimValidationTrace {
   id: string;
   status: string;
@@ -206,7 +211,8 @@ export interface SessionSnapshot {
   papers: SessionPaperView[];
   summaries: Summary[];
   claims: Claim[];
-  claim_evidence: ClaimEvidence[];
+  /** Compact snapshots carry only what the hub counts; open a claim for its passages. */
+  claim_evidence: SnapshotEvidence[];
   hypotheses?: Hypothesis[];
   decisions?: AgentDecision[];
   events: EventRecord[];

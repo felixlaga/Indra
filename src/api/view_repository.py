@@ -11,6 +11,15 @@ from typing import Any
 
 LEASE_SECONDS = 120
 MAX_ATTEMPTS = 3
+# Bump when map or advisor output changes, so results cached by older code are rebuilt
+# on their next request instead of being served. 2: model hypotheses in advice.
+BUILDER_VERSION = 2
+
+
+def outdated(row: dict) -> bool:
+    return row["status"] == "ready" and (row.get("result") or {}).get(
+        "builder_version"
+    ) != BUILDER_VERSION
 
 
 class MemoryViewWrites:
@@ -34,8 +43,10 @@ class MemoryViewWrites:
                     updated_at=utc_now(),
                 )
                 self._research_views[session_id] = row
-            elif row["requested_revision"] != revision or (
-                retry and row["status"] == "failed"
+            elif (
+                row["requested_revision"] != revision
+                or (retry and row["status"] == "failed")
+                or outdated(row)
             ):
                 row.update(requested_revision=revision, attempts=0, error=None)
                 if row["status"] != "running":
@@ -110,19 +121,27 @@ class PostgresViewWrites:
                 conn,
                 """
                 INSERT INTO session_research_views(session_id,requested_revision,status)
-                VALUES (%s,%s,'queued') ON CONFLICT(session_id) DO UPDATE SET
+                VALUES (%(session_id)s,%(revision)s,'queued') ON CONFLICT(session_id) DO UPDATE SET
                   requested_revision=GREATEST(session_research_views.requested_revision,EXCLUDED.requested_revision),
                   status=CASE WHEN session_research_views.status='running' THEN 'running'
                     WHEN session_research_views.requested_revision<EXCLUDED.requested_revision
-                      OR (%s AND session_research_views.status='failed') THEN 'queued'
+                      OR (%(retry)s AND session_research_views.status='failed')
+                      OR (session_research_views.status='ready'
+                          AND session_research_views.result->>'builder_version' IS DISTINCT FROM %(version)s)
+                      THEN 'queued'
                     ELSE session_research_views.status END,
                   attempts=CASE WHEN session_research_views.requested_revision<EXCLUDED.requested_revision
-                      OR (%s AND session_research_views.status='failed') THEN 0 ELSE session_research_views.attempts END,
+                      OR (%(retry)s AND session_research_views.status='failed') THEN 0 ELSE session_research_views.attempts END,
                   error=CASE WHEN session_research_views.requested_revision<EXCLUDED.requested_revision
-                      OR (%s AND session_research_views.status='failed') THEN NULL ELSE session_research_views.error END
+                      OR (%(retry)s AND session_research_views.status='failed') THEN NULL ELSE session_research_views.error END
                 RETURNING *
             """,
-                (session_id, revision, retry, retry, retry),
+                {
+                    "session_id": session_id,
+                    "revision": revision,
+                    "retry": retry,
+                    "version": str(BUILDER_VERSION),
+                },
             )
 
     def lease_views(self) -> dict[str, Any] | None:

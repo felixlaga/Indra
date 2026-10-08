@@ -448,7 +448,91 @@ async def test_model_budget_also_limits_verification(repo):
         repo, ResearchPipeline(repo, model, search=source, full_text=text)
     ).run_once()
     assert model.calls == 1
-    assert result.status.value == "failed"
+    # Running out of budget finishes the session and leaves the rest for review.
+    assert result.status.value == "succeeded"
     assert result.result["model_calls"] == 1
-    assert "budget exhausted" in result.last_error
+    assert result.result["verification_mode"] == "model_partial"
+    assert "budget of 1 was reached" in result.result["message"]
+    assert "1 claims were left for review" in result.result["message"]
+    assert repo.get_session(session.id).status.value == "completed"
+    claim = repo.list_claims(session.id)[0]
+    assert claim.status.value == "needs_review"
+    assert result.result["review_claim_ids"] == [claim.id]
+    assert repo.list_claim_evidence(claim.id)
+
+
+class ScriptedModel:
+    """Return a synthesis first, then the given outcomes for later calls."""
+
+    def __init__(self, *later):
+        self.later, self.calls = list(later), 0
+
+    async def generate(self, schema, *_):
+        self.calls += 1
+        if self.calls == 1:
+            return PaperSynthesis(
+                summary="Summary",
+                claims=[
+                    ClaimDraft(
+                        text="The method improves accuracy.", claim_type="factual"
+                    )
+                ],
+            ), {}
+        outcome = self.later.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return schema.model_validate(outcome), {}
+
+
+async def test_invalid_verification_answer_leaves_claim_for_review(repo):
+    session = start(repo)
+    model = ScriptedModel(
+        {"relation": "supports", "quote": "invented quote", "rationale": "Made up."}
+    )
+    result = await ResearchWorker(
+        repo, ResearchPipeline(repo, model, search=source, full_text=text)
+    ).run_once()
+    assert result.status.value == "succeeded"
+    assert result.result["verification_mode"] == "model_partial"
+    assert "Some model answers were invalid" in result.result["message"]
+    claim = repo.list_claims(session.id)[0]
+    assert claim.status.value == "needs_review"
+    evidence = repo.list_claim_evidence(claim.id)
+    assert evidence and all(e.relation.value == "mentions" for e in evidence)
+    assert repo.get_session(session.id).status.value == "completed"
+
+
+async def test_rate_limit_stops_model_use_and_completes(repo):
+    from src.research.model import ModelRateLimited
+
+    session = start(repo)
+    model = ScriptedModel(ModelRateLimited("The provider's daily quota was reached"))
+    result = await ResearchWorker(
+        repo, ResearchPipeline(repo, model, search=source, full_text=text)
+    ).run_once()
+    assert result.status.value == "succeeded"
+    assert result.result["model_stop_reason"] == "The provider's daily quota was reached"
+    assert "daily quota was reached" in result.result["message"]
     assert repo.list_claims(session.id)[0].status.value == "needs_review"
+    assert model.calls == 2
+
+
+async def test_rate_limit_during_synthesis_keeps_a_labelled_excerpt(repo):
+    from src.research.model import ModelRateLimited
+
+    class Limited:
+        calls = 0
+
+        async def generate(self, *_):
+            self.calls += 1
+            raise ModelRateLimited("The provider's daily quota was reached")
+
+    session = start(repo)
+    model = Limited()
+    result = await ResearchWorker(
+        repo, ResearchPipeline(repo, model, search=source, full_text=text)
+    ).run_once()
+    assert result.status.value == "succeeded"
+    assert model.calls == 1
+    summary = repo.get_session_snapshot(session.id).summaries[0]
+    assert summary.text.startswith("Source excerpt (not model-validated)")

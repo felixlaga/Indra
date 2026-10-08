@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { AccountMenu } from "@/components/login-form";
+
 interface AppHeaderProps {
   eyebrow?: string;
   title?: string;
@@ -25,6 +27,7 @@ export function AppHeader({
         </Link>
         <nav className="primary-nav" aria-label="Primary navigation">
           <Link href="/projects">Projects</Link>
+          <AccountMenu />
         </nav>
       </div>
       {(title || description || actions) && (

@@ -6,7 +6,7 @@ import asyncio
 import os
 from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .claim_validation_routes import router as claim_validation_router
@@ -17,7 +17,8 @@ from .research_map_routes import router as research_map_router
 from .repository import ProductRepository
 from .repository_factory import create_repository
 from .routes import router
-from .security import require_api_key
+from .auth import authenticate, authorize_path
+from .auth import router as auth_router
 from .view_routes import router as view_router
 
 _DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
@@ -69,7 +70,7 @@ def create_app(repository: ProductRepository | None = None, *, run_memory_views:
             "Product API for Indra sessions, evidence, maps, advice, and exports."
         ),
     )
-    app.middleware("http")(require_api_key)
+    app.middleware("http")(authenticate)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(),
@@ -87,11 +88,14 @@ def create_app(repository: ProductRepository | None = None, *, run_memory_views:
     app.state.repository = repository
     app.state.event_notifications = notifications
     app.include_router(health_router)
-    app.include_router(router)
-    app.include_router(claim_validation_router)
-    app.include_router(research_map_router)
-    app.include_router(export_router)
-    app.include_router(view_router)
+    app.include_router(auth_router)
+    # Every resource route checks that a signed-in user owns what the path names.
+    owned = [Depends(authorize_path)]
+    app.include_router(router, dependencies=owned)
+    app.include_router(claim_validation_router, dependencies=owned)
+    app.include_router(research_map_router, dependencies=owned)
+    app.include_router(export_router, dependencies=owned)
+    app.include_router(view_router, dependencies=owned)
     return app
 
 

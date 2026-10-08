@@ -35,7 +35,11 @@ def _expected_api_key() -> str | None:
 
 
 def _provided_api_key(request: Request) -> str | None:
-    header_key = request.headers.get("x-indra-api-key")
+    # The dashboard's server forwards the key as a proxy key; with accounts off it
+    # unlocks the API like the key itself. In accounts mode it grants nothing.
+    header_key = request.headers.get("x-indra-api-key") or request.headers.get(
+        "x-indra-proxy-key"
+    )
     if header_key:
         return header_key.strip()
 

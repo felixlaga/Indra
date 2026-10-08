@@ -369,3 +369,17 @@ export interface Summary {
   created_at: string;
   updated_at: string;
 }
+
+export interface User {
+  id: string;
+  email: string;
+  name?: string | null;
+  created_at: string;
+}
+
+/** "off": single-user local mode; "accounts": sign-in required. */
+export interface AuthStatus {
+  mode: "off" | "accounts";
+  user?: User | null;
+  signup_open: boolean;
+}

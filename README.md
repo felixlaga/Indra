@@ -8,6 +8,7 @@ Indra is not primarily a generic chatbot or writing assistant. Its product surfa
 
 - Academic search through arXiv, OpenAlex and Semantic Scholar, with OpenAlex citation links ([Phase 6](docs/research/PHASE_6.md)).
 - Optional semantic evidence retrieval with a local embedding model, and OCR for scanned PDFs when Tesseract is installed.
+- Optional accounts: sign-in, per-user projects and sessions, and a dashboard that keeps tokens and keys server-side ([Phase 7](docs/research/PHASE_7.md)).
 - Composite multi-provider search with parallel, fallback, and single-source strategies.
 - PDF text extraction and OpenRouter-compatible summarization.
 - Recursive research orchestration with branches, loops, reflection, and hypothesis generation.
@@ -88,8 +89,10 @@ HALUGATE_URL=http://localhost:8000
 | `INDRA_REPOSITORY_BACKEND` | Storage backend: use `memory` for in‑memory sessions or `postgres` for durable storage | `memory` |
 | `INDRA_DATABASE_URL` | Connection string used when `INDRA_REPOSITORY_BACKEND=postgres` | `postgresql://user:password@localhost:5432/indra` |
 | `INDRA_CORS_ORIGINS` | Comma‑separated list of allowed origins for the API | `http://localhost:3000` |
-| `INDRA_API_KEY` | Optional API key for trusted local deployments; dashboard requests must use the same value | `local-key` |
-| `NEXT_PUBLIC_INDRA_API_KEY` | Dashboard API key in `apps/web/.env.local`; embedded in the browser bundle, so this is not a multi-user authentication system | `local-key` |
+| `INDRA_API_KEY` | Optional shared key; with accounts on, the service key for workers and operators. Set the same value in `apps/web/.env.local`, where it stays server-side | `local-key` |
+| `INDRA_AUTH_MODE` | `accounts` requires sign-in and limits users to their own projects; `off` is single-user mode | `accounts` |
+| `INDRA_ALLOW_SIGNUP` | Whether new accounts can be created after the first | `false` |
+| `INDRA_API_URL` | In `apps/web/.env.local`: where the dashboard's server reaches the API | `http://localhost:8000` |
 | `SEMANTIC_SCHOLAR_BASE_URL` | Optional provider endpoint; defaults to the public Graph API | `https://api.semanticscholar.org/graph/v1` |
 | `SEMANTIC_SCHOLAR_API_KEY` | Optional key enabling higher Semantic Scholar request quotas | `api-key` |
 | `INDRA_CONTACT_EMAIL` | Optional contact sent to OpenAlex for its faster "polite pool" | `you@example.org` |
@@ -240,7 +243,6 @@ Implementation notes:
 ## Production-hardening work still required
 
 - Add database pagination for paper/claim snapshots and graph virtualization for larger sessions.
-- Add authentication and project authorization.
 - Add calibrated domain-specific inference where appropriate.
 - Deploy Postgres, migrations, API, workers, and dashboard as one system.
 - Add cache eviction/versioning and asynchronous export jobs if session scale requires them.

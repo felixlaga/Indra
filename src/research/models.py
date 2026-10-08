@@ -101,6 +101,28 @@ class PaperResult(BaseModel):
         return self
 
 
+class SearchPlan(BaseModel):
+    """Keyword queries for a question too long or conversational to search verbatim."""
+
+    model_config = ConfigDict(extra="forbid")
+    topic: str = Field(min_length=1, max_length=200)
+    queries: list[str] = Field(max_length=5)
+
+
+class PaperChoice(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    candidate: int
+    reason: str = Field(min_length=1, max_length=400)
+
+
+class PaperSelection(BaseModel):
+    """Candidates chosen by number, most useful first."""
+
+    model_config = ConfigDict(extra="forbid")
+    assessment: str = Field(min_length=1, max_length=1000)
+    selected: list[PaperChoice] = Field(max_length=20)
+
+
 class EvidenceJudgment(BaseModel):
     model_config = ConfigDict(extra="forbid")
     relation: Literal["supports", "contradicts", "insufficient"]

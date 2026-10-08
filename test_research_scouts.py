@@ -17,7 +17,9 @@ from src.research.models import (
     EvidenceJudgments,
     FollowUpQuestion,
     HypothesisDraft,
+    PaperChoice,
     PaperChunk,
+    PaperSelection,
     PaperSynthesis,
     ClaimDraft,
     ResearchLimits,
@@ -99,6 +101,14 @@ class ScriptedModel:
                     for p in data["passages"]
                 ]
             ), {"model": "fixture"}
+        if schema is PaperSelection:
+            return PaperSelection(
+                assessment="The first candidates match the question.",
+                selected=[
+                    PaperChoice(candidate=c["candidate"], reason=f"About {c['title']}.")
+                    for c in data["candidates"][: data["choose_at_most"]]
+                ],
+            ), {"model": "fixture", "prompt_name": "PaperSelection"}
         if schema is ScoutPlan:
             if isinstance(self.plan, Exception):
                 raise self.plan
@@ -206,9 +216,19 @@ async def test_scouts_open_a_branch_and_synthesis_keeps_cross_paper_hypotheses(r
     # The Scout skipped paper a, already read by the root, and read only c.
     child_titles = {p.paper.title for p in snapshot.papers if p.branch_id == child.id}
     assert child_titles == {"Paper c"}
-    assert search.queries[1] == (CHILD_QUERY, 2 + 2)
+    # Each query asks for a full candidate pool; the branch then chooses from it.
+    assert search.queries[1] == (CHILD_QUERY, 15)
+    found = {
+        d.branch_id: d for d in snapshot.decisions if d.decision_type == "paper_selection"
+    }
+    assert found[child.id].details["candidates"] == 1
+    assert [s["title"] for s in found[child.id].details["selected"]] == ["Paper c"]
+    assert found[root.id].details["queries"] == [ROOT_QUERY]
 
-    plan, synthesis = sorted(snapshot.decisions, key=lambda d: d.decision_type)
+    plan, synthesis = sorted(
+        (d for d in snapshot.decisions if d.decision_type != "paper_selection"),
+        key=lambda d: d.decision_type,
+    )
     assert plan.decision_type == "branch_split" and plan.branch_id == root.id
     assert plan.details["child_branch_ids"] == [child.id]
     assert plan.alternatives == [
@@ -246,7 +266,7 @@ async def test_without_a_model_no_scouts_or_synthesis_and_the_reason_is_recorded
     assert [j.job_type for j in jobs] == [JobType.RESEARCH_SESSION]
     snapshot = reader(repo).get_session_snapshot(session.id)
     assert snapshot.session.status.value == "completed"
-    (decision,) = snapshot.decisions
+    (decision,) = [d for d in snapshot.decisions if d.decision_type == "branch_split"]
     assert decision.rationale == "Follow-up branches need a configured research model."
     assert len(snapshot.branches) == 1 and not snapshot.hypotheses
 
@@ -267,10 +287,11 @@ async def test_rate_limited_plan_opens_no_branches_and_still_synthesizes(repo):
 
 async def test_reserved_calls_keep_planning_and_synthesis_when_budget_is_tight(repo):
     # reserve = 1 call; 3 spendable split 1 per paper across root (1) and Scout (1).
+    # The root chooses 1 of 2 candidates with its call; the Scout has 1 new candidate.
     session = start(repo, max_papers=1, branch_papers=1, max_branches=1, max_model_calls=4)
     model = ScriptedModel()
     jobs = await drain(repo, ResearchPipeline(repo, model, search=Search(), full_text=full_text))
-    assert model.calls == ["PaperSynthesis", "ScoutPlan", "PaperSynthesis", "SessionSynthesis"]
+    assert model.calls == ["PaperSelection", "ScoutPlan", "PaperSynthesis", "SessionSynthesis"]
     assert sum(j.result.get("model_calls", 0) for j in jobs) == 4
     snapshot = reader(repo).get_session_snapshot(session.id)
     assert len(snapshot.branches) == 2

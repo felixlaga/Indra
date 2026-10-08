@@ -1,12 +1,23 @@
 """Use existing research search adapters behind a bounded product interface."""
 
 import asyncio
+import re
+import time
 
 from ..api.models import Paper
 from ..api.repository import utc_now
 from ..domain.papers import PaperExternalIds, canonical_paper_key
 from ..semantic_scholar.models import SearchFilters
 from .models import stable_id
+from .retrieval import STOP_WORDS
+
+# arXiv asks for one request every three seconds; Semantic Scholar's keyless tier
+# allows about one per second. Slots are shared by concurrent searches.
+REQUEST_GAP_SECONDS = {"arxiv": 3.0, "semantic_scholar": 1.0}
+_next_slot: dict[str, float] = {}
+_PHRASE_OR_WORD = re.compile(r'"([^"]+)"|(\S+)')
+_WORD = re.compile(r"[A-Za-z0-9]+")
+MAX_ARXIV_TERMS = 8
 
 
 def to_product_paper(details, provider: str) -> Paper:
@@ -43,7 +54,42 @@ def to_product_paper(details, provider: str) -> Paper:
     )
 
 
+async def _wait_turn(name: str) -> None:
+    gap = REQUEST_GAP_SECONDS.get(name)
+    if not gap:
+        return
+    now = time.monotonic()
+    slot = max(now, _next_slot.get(name, 0.0))
+    _next_slot[name] = slot + gap
+    if slot > now:
+        await asyncio.sleep(slot - now)
+
+
+def arxiv_query(query: str) -> str:
+    """Require every term: arXiv otherwise matches any one word of a multi-word query.
+
+    Quoted phrases stay phrases: `"gravitational wave" lensing` becomes
+    `all:"gravitational wave" AND all:lensing`.
+    """
+
+    parts = []
+    for phrase, word in _PHRASE_OR_WORD.findall(query):
+        if phrase:
+            if words := _WORD.findall(phrase):
+                parts.append('all:"' + " ".join(words) + '"')
+            continue
+        parts.extend(
+            f"all:{w}" for w in _WORD.findall(word) if w.lower() not in STOP_WORDS
+        )
+    return " AND ".join(parts[:MAX_ARXIV_TERMS]) or query
+
+
 async def search_provider(name, query, filters, limits):
+    """Up to ``limits.max_papers`` papers with abstracts for one keyword query.
+
+    Queries are provider-neutral and may quote phrases; each source gets its own syntax.
+    """
+
     if name == "openalex":
         from .openalex import OpenAlexClient
 
@@ -56,21 +102,27 @@ async def search_provider(name, query, filters, limits):
     if name == "arxiv":
         from ..arxiv.adapters import ArXivAdapter
 
-        adapter = ArXivAdapter()
-    elif name == "semantic_scholar":
-        from ..semantic_scholar.adapters import SemanticScholarAdapter
-
-        adapter = SemanticScholarAdapter()
-    else:
+        async with asyncio.timeout(limits.provider_timeout_seconds):
+            await _wait_turn(name)
+            async with ArXivAdapter() as adapter:
+                found = await adapter.search_details(
+                    arxiv_query(query),
+                    filters=SearchFilters.model_validate(filters),
+                    limit=min(limits.search_limit, limits.max_papers),
+                )
+                return [to_product_paper(p, name) for p in found]
+    if name != "semantic_scholar":
         raise ValueError(f"Unsupported research source: {name}")
+    from ..semantic_scholar.adapters import SemanticScholarAdapter
+
     async with asyncio.timeout(limits.provider_timeout_seconds):
-        async with adapter:
+        await _wait_turn(name)
+        async with SemanticScholarAdapter() as adapter:
             found = await adapter.search_papers(
-                query,
+                query.replace('"', ""),
                 filters=SearchFilters.model_validate(filters),
                 limit=limits.search_limit,
             )
-            # Fetch metadata and full text only for candidates selected for processing.
             selected = found[: limits.max_papers]
             if not selected:
                 return []

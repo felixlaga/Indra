@@ -6,7 +6,7 @@ Indra is not primarily a generic chatbot or writing assistant. Its product surfa
 
 ## Implemented product phases
 
-- Academic search through arXiv, OpenAlex and Semantic Scholar, with OpenAlex citation links ([Phase 6](docs/research/PHASE_6.md)).
+- Academic search through arXiv, OpenAlex and Semantic Scholar, with OpenAlex citation links ([Phase 6](docs/research/PHASE_6.md)). Long questions become keyword queries, and each branch chooses relevant papers from a larger candidate pool ([paper selection](docs/research/PAPER_SELECTION.md)).
 - Optional semantic evidence retrieval with a local embedding model, and OCR for scanned PDFs when Tesseract is installed.
 - Optional accounts: sign-in, per-user projects and sessions, and a dashboard that keeps tokens and keys server-side ([Phase 7](docs/research/PHASE_7.md)).
 - Docker Compose deployment of the whole system ([Phase 8](docs/research/PHASE_8.md)) and measured large-session performance ([Phase 9](docs/research/PHASE_9.md)).

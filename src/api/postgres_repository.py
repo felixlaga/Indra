@@ -15,6 +15,7 @@ from ..domain.transitions import (
     validate_session_transition,
 )
 from .models import (
+    AgentDecision,
     Branch,
     BranchCreate,
     BranchPatch,
@@ -27,6 +28,7 @@ from .models import (
     ClaimValidationRequest,
     ClaimValidationResult,
     Event,
+    Hypothesis,
     Job,
     JobStatus,
     JobType,
@@ -274,6 +276,8 @@ class PostgresRepository(PostgresResearchWrites, PostgresEventReads, PostgresVie
                 summaries=self._list_summaries(conn, session_id),
                 claims=self._list_claims(conn, session_id),
                 claim_evidence=self._list_claim_evidence_for_session(conn, session_id),
+                hypotheses=self._list_hypotheses(conn, session_id),
+                decisions=self._list_decisions(conn, session_id),
                 events=events,
                 event_cursor=latest,
                 events_has_more=bool(latest and (not events or events[0].sequence > 1)),
@@ -1316,7 +1320,7 @@ class PostgresRepository(PostgresResearchWrites, PostgresEventReads, PostgresVie
                 """,
                 (error, job.session_id),
             )
-        if job.branch_id:
+        if job.branch_id and job.job_type != JobType.SESSION_SYNTHESIS:
             self._execute(
                 conn,
                 """
@@ -1327,6 +1331,27 @@ class PostgresRepository(PostgresResearchWrites, PostgresEventReads, PostgresVie
                 """,
                 (error, job.branch_id),
             )
+        # A failed Scout branch or synthesis keeps the session's other results usable.
+        if job.job_type != JobType.RESEARCH_SESSION:
+            completed = self._fetch_optional(
+                conn,
+                """
+                UPDATE research_sessions SET status='completed', completed_at=now()
+                WHERE id=%s AND status='running' AND NOT EXISTS (
+                    SELECT 1 FROM jobs WHERE session_id=%s AND id<>%s
+                    AND status IN ('queued','running','paused'))
+                RETURNING id
+                """,
+                (job.session_id, job.session_id, job.id),
+            )
+            if completed:
+                self._insert_event(
+                    conn,
+                    session_id=job.session_id,
+                    event_type="session_completed",
+                    payload={"message": "Session finished; a follow-up job failed and its results are partial."},
+                    severity="warning",
+                )
 
     def _get_paper_row(self, conn: Any, paper_id: str) -> dict:
         row = self._fetch_optional(
@@ -1395,6 +1420,32 @@ class PostgresRepository(PostgresResearchWrites, PostgresEventReads, PostgresVie
             (session_id,),
         )
         return [_summary_from_row(row) for row in rows]
+
+    def _list_hypotheses(self, conn: Any, session_id: str) -> list[Hypothesis]:
+        rows = self._fetch_all(
+            conn,
+            """
+            SELECT h.*,
+              COALESCE(array_agg(s.claim_id::text ORDER BY s.created_at, s.id)
+                FILTER (WHERE s.relation='supports' AND s.claim_id IS NOT NULL), '{}') AS supporting,
+              COALESCE(array_agg(s.claim_id::text ORDER BY s.created_at, s.id)
+                FILTER (WHERE s.relation='contradicts' AND s.claim_id IS NOT NULL), '{}') AS contradicting,
+              COALESCE(array_agg(DISTINCT s.paper_id::text)
+                FILTER (WHERE s.relation='supports' AND s.paper_id IS NOT NULL), '{}') AS papers
+            FROM hypotheses h LEFT JOIN hypothesis_support s ON s.hypothesis_id = h.id
+            WHERE h.session_id = %s GROUP BY h.id ORDER BY h.created_at, h.id
+            """,
+            (session_id,),
+        )
+        return [_hypothesis_from_row(row) for row in rows]
+
+    def _list_decisions(self, conn: Any, session_id: str) -> list[AgentDecision]:
+        rows = self._fetch_all(
+            conn,
+            "SELECT * FROM agent_decisions WHERE session_id = %s ORDER BY created_at, id",
+            (session_id,),
+        )
+        return [_decision_from_row(row) for row in rows]
 
     def _get_claim(self, conn: Any, claim_id: str) -> Claim:
         row = self._fetch_optional(conn, "SELECT * FROM claims WHERE id = %s", (claim_id,))
@@ -1516,6 +1567,55 @@ class PostgresRepository(PostgresResearchWrites, PostgresEventReads, PostgresVie
             validate_branch_transition(current, target)
         except InvalidTransitionError as exc:
             raise ConflictError(str(exc)) from exc
+
+
+def _row_provenance(row: dict) -> dict | None:
+    if not row.get("model"):
+        return None
+    return {
+        "provider": row.get("provider"),
+        "model": row.get("model"),
+        "prompt_name": row.get("prompt_name"),
+        "prompt_version": row.get("prompt_version"),
+        "provider_request_id": row.get("provider_request_id"),
+        "token_usage": row.get("token_usage") or {},
+    }
+
+
+def _hypothesis_from_row(row: dict) -> Hypothesis:
+    return Hypothesis(
+        id=str(row["id"]),
+        session_id=str(row["session_id"]),
+        branch_id=str(row["branch_id"]) if row["branch_id"] else None,
+        text=row["text"],
+        rationale=row["rationale"],
+        status=row["status"] or "draft",
+        testability=row["testability"],
+        risk_level=row["risk_level"],
+        supporting_claim_ids=list(row["supporting"]),
+        contradicting_claim_ids=list(row["contradicting"]),
+        supporting_paper_ids=sorted(row["papers"]),
+        missing_evidence=row["missing_evidence"] or [],
+        next_steps=row["next_steps"] or [],
+        generation_provenance=_row_provenance(row),
+        created_at=row["created_at"],
+    )
+
+
+def _decision_from_row(row: dict) -> AgentDecision:
+    return AgentDecision(
+        id=str(row["id"]),
+        session_id=str(row["session_id"]),
+        branch_id=str(row["branch_id"]) if row["branch_id"] else None,
+        decision_type=row["decision_type"],
+        decision=row["decision"],
+        rationale=row["rationale"],
+        input_summary=row["input_summary"],
+        alternatives=row["alternatives"] or [],
+        details=row["details"] or {},
+        generation_provenance=_row_provenance(row),
+        created_at=row["created_at"],
+    )
 
 
 def _project_from_row(row: dict) -> Project:

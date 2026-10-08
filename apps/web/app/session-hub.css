@@ -156,6 +156,56 @@
 .hub-scout-node small {
   color: var(--muted);
 }
+.hub-scout-decision {
+  flex-basis: 100%;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 10px;
+  color: var(--muted);
+}
+.hub-scout-decision p strong {
+  color: var(--accent-strong);
+}
+.hub-scout-decision ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.hub-synthesis {
+  border: 1px solid #2f4a6b;
+  background: rgba(106, 169, 255, 0.06);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.hub-synthesis h3,
+.hub-synthesis h4 {
+  margin: 0 0 8px;
+}
+.hub-synthesis h4 {
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.hub-synthesis-text {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  margin: 0 0 8px;
+}
+.hub-synthesis small {
+  color: var(--muted);
+}
+.hub-synthesis ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.hub-synthesis li {
+  display: grid;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
 .hub-scout-papers {
   margin: 12px 0 0 24px;
   border-left: 2px solid var(--line);

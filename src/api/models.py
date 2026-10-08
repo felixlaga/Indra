@@ -393,6 +393,42 @@ class JobFailureRequest(BaseModel):
     retry_delay_seconds: int = Field(default=60, ge=0, le=86_400)
 
 
+class Hypothesis(BaseModel):
+    """A generated cross-paper hypothesis; speculative until independently evidenced."""
+
+    id: str
+    session_id: str
+    branch_id: str | None = None
+    text: str
+    rationale: str | None = None
+    status: str = "draft"
+    testability: float | None = Field(default=None, ge=0, le=1)
+    risk_level: str | None = None
+    supporting_claim_ids: list[str] = Field(default_factory=list)
+    contradicting_claim_ids: list[str] = Field(default_factory=list)
+    supporting_paper_ids: list[str] = Field(default_factory=list)
+    missing_evidence: list[str] = Field(default_factory=list)
+    next_steps: list[str] = Field(default_factory=list)
+    generation_provenance: dict[str, Any] | None = None
+    created_at: datetime
+
+
+class AgentDecision(BaseModel):
+    """Why the research agent created, skipped, or stopped work."""
+
+    id: str
+    session_id: str
+    branch_id: str | None = None
+    decision_type: str
+    decision: str
+    rationale: str | None = None
+    input_summary: str | None = None
+    alternatives: list[dict[str, Any]] = Field(default_factory=list)
+    details: dict[str, Any] = Field(default_factory=dict)
+    generation_provenance: dict[str, Any] | None = None
+    created_at: datetime
+
+
 class SessionSnapshot(BaseModel):
     """A reconstructable session view for dashboard clients."""
 
@@ -404,6 +440,8 @@ class SessionSnapshot(BaseModel):
     summaries: list[Summary] = Field(default_factory=list)
     claims: list[Claim] = Field(default_factory=list)
     claim_evidence: list[ClaimEvidence] = Field(default_factory=list)
+    hypotheses: list[Hypothesis] = Field(default_factory=list)
+    decisions: list[AgentDecision] = Field(default_factory=list)
     events: list[Event] = Field(default_factory=list)
     event_cursor: int = 0
     events_has_more: bool = False

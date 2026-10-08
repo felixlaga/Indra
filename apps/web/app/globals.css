@@ -298,6 +298,17 @@ button { color: inherit; }
 .provider-toggle input:checked + span { border-color: #4d78a7; color: #c9e0ff; background: rgba(106,169,255,.1); }
 .session-create-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .session-create-footer p { margin: 0; color: var(--muted-2); font-size: 11px; }
+.depth-picker { margin: 0; padding: 0; border: 0; display: grid; gap: 8px; }
+.depth-picker legend { margin-bottom: 8px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.depth-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.depth-option { cursor: pointer; }
+.depth-option input { position: absolute; opacity: 0; pointer-events: none; }
+.depth-option span { display: grid; gap: 4px; height: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); }
+.depth-option strong { color: inherit; font-size: 13px; }
+.depth-option small { font-size: 11px; line-height: 1.4; }
+.depth-option input:checked + span { border-color: #4d78a7; color: #c9e0ff; background: rgba(106,169,255,.1); }
+.depth-option input:focus-visible + span { outline: 2px solid #6aa9ff; outline-offset: 2px; }
+.depth-hint { margin: 0; color: var(--muted-2); font-size: 11px; }
 .content-section { padding: 20px; border: 1px solid var(--line-soft); border-radius: var(--radius); background: var(--panel); }
 .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
 .section-heading h2 { margin: 4px 0 0; font-size: 19px; }
@@ -478,6 +489,7 @@ button { color: inherit; }
   .page-heading { min-height: auto; padding: 28px 0 32px; align-items: flex-start; flex-direction: column; }
   .page-heading h1 { font-size: 32px; }
   .toolbar-row, .project-overview-strip, .session-create-footer, .session-row { align-items: stretch; flex-direction: column; }
+  .depth-options { grid-template-columns: 1fr; }
   .project-grid, .paper-grid, .paper-detail-layout, .evidence-status-grid { grid-template-columns: 1fr; }
   .metric-grid-4 { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .session-row-metrics { grid-template-columns: repeat(3,1fr); }

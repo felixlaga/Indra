@@ -7,7 +7,7 @@ import json
 from fastapi import APIRouter, HTTPException, Request
 
 from ..claims import EvidenceCandidate, EvidenceRetriever, split_passages
-from ..claims.semantic_verifier import judge_passage
+from ..claims.semantic_verifier import judge_passages
 from ..research.model import ResearchModel
 from .claim_validation_models import (
     ClaimAutoValidationRequest,
@@ -128,27 +128,27 @@ async def validate_automatically(
     if not payload.include_session_papers:
         own_id = repository.get_paper(claim.paper_id).id if claim.paper_id else None
         entries = [entry for entry in entries if entry.paper_id == own_id]
+    # A paper found by several branches is still one source of passages.
+    papers = {entry.paper.id: entry.paper for entry in entries}
     candidates = [
         candidate
-        for entry in entries
+        for paper in papers.values()
         for candidate in _paper_candidates(
-            entry.paper, repository.list_paper_chunks(entry.paper.id)
+            paper, repository.list_paper_chunks(paper.id)
         )
     ]
     retrieved = _retriever.retrieve(
         claim.claim_text, candidates, top_k=payload.top_k, min_score=payload.min_score
     )
-    evidence, judgments = [], []
-    for item in retrieved:
-        decision, trace = await judge_passage(claim.claim_text, item, model)
-        evidence.append(decision)
-        judgments.append(trace)
+    judged = await judge_passages(claim.claim_text, retrieved, model)
+    evidence = [decision for decision, _ in judged]
+    judgments = [trace for _, trace in judged]
     request = ClaimValidationRequest(
         evidence=evidence,
         validator_type="claim_evidence",
         notes=json.dumps(
             {
-                "strategy": "structured_evidence_judge_v1"
+                "strategy": "structured_evidence_judge_batch_v1"
                 if model
                 else "retrieval_only",
                 "candidates_considered": len(candidates),

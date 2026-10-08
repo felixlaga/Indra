@@ -207,6 +207,8 @@ export interface SessionSnapshot {
   summaries: Summary[];
   claims: Claim[];
   claim_evidence: ClaimEvidence[];
+  hypotheses?: Hypothesis[];
+  decisions?: AgentDecision[];
   events: EventRecord[];
   event_cursor?: number;
   events_has_more?: boolean;
@@ -321,6 +323,39 @@ export interface PaperChunk {
   page_start: number | null;
   page_end: number | null;
   section_title: string | null;
+}
+
+/** A cross-paper hypothesis from session synthesis; always speculative. */
+export interface Hypothesis {
+  id: string;
+  session_id: string;
+  branch_id?: string | null;
+  text: string;
+  rationale?: string | null;
+  status: string;
+  testability?: number | null;
+  risk_level?: string | null;
+  supporting_claim_ids: string[];
+  contradicting_claim_ids: string[];
+  supporting_paper_ids: string[];
+  missing_evidence: string[];
+  next_steps: string[];
+  created_at: string;
+}
+
+/** Why the research agent opened, skipped or stopped work. */
+export interface AgentDecision {
+  id: string;
+  session_id: string;
+  branch_id?: string | null;
+  decision_type: string;
+  decision: string;
+  rationale?: string | null;
+  input_summary?: string | null;
+  alternatives: Array<{ query?: string; hypothesis?: string; reason?: string }>;
+  details: { child_branch_ids?: string[]; hypothesis_ids?: string[] } & Record<string, unknown>;
+  generation_provenance?: Record<string, unknown> | null;
+  created_at: string;
 }
 
 export interface Summary {

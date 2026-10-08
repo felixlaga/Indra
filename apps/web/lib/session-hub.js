@@ -162,7 +162,7 @@ export function validationSummary(notes) {
     const strategy =
       parsed.strategy === "retrieval_only"
         ? "Retrieved passages only; no model judgment."
-        : parsed.strategy === "structured_evidence_judge_v1"
+        : String(parsed.strategy).startsWith("structured_evidence_judge")
           ? "Structured model evidence check."
           : "Recorded evidence check.";
     const rationales = Array.isArray(parsed.judgments)

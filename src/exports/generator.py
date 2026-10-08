@@ -180,9 +180,22 @@ class ExportGenerator:
             f"- Claims: {len(snapshot.claims)}",
             f"- Observed citation paths: {research_map.overview.observed_citation_edge_count}",
             "",
-            "## Branch synthesis",
-            "",
         ]
+        session_summary = next(
+            (s for s in snapshot.summaries if self._value(s.summary_type) == "session"),
+            None,
+        )
+        if session_summary is not None:
+            lines.extend([
+                "## Session synthesis",
+                "",
+                "> Model-written overview of the checked claims. It is not itself validated; "
+                "rely on the claim statuses below.",
+                "",
+                session_summary.text,
+                "",
+            ])
+        lines.extend(["## Branch synthesis", ""])
         for synthesis in research_map.branch_syntheses:
             lines.extend([
                 f"### {synthesis.label}",
@@ -229,6 +242,9 @@ class ExportGenerator:
         for hypothesis in advice.hypotheses:
             lines.extend([
                 f"### [SPECULATIVE] {hypothesis.text}",
+                "",
+                "Source: cross-paper session synthesis." if hypothesis.source == "model"
+                else "Source: open-problem heuristic.",
                 "",
                 f"Confidence signal: {hypothesis.confidence:.2f}; testability signal: {hypothesis.testability:.2f}; risk: {hypothesis.risk}.",
                 "",

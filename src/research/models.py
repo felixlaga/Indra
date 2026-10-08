@@ -3,7 +3,7 @@
 from typing import Literal
 from uuid import NAMESPACE_URL, uuid5
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..api.models import ClaimType, Paper
 
@@ -45,6 +45,12 @@ class PaperSynthesis(BaseModel):
     claims: list[ClaimDraft] = Field(max_length=10)
 
 
+def without_nul(value: str | None) -> str | None:
+    """PostgreSQL text cannot hold NUL characters, which some PDFs and APIs contain."""
+
+    return value.replace("\x00", "") if value else value
+
+
 class PaperResult(BaseModel):
     paper: Paper
     chunks: list[PaperChunk] = Field(default_factory=list)
@@ -53,6 +59,18 @@ class PaperResult(BaseModel):
     source_note: str | None = None
     synthesis: PaperSynthesis | None = None
     provenance: dict = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def storable_text(self) -> "PaperResult":
+        self.paper.title = without_nul(self.paper.title)
+        self.paper.abstract = without_nul(self.paper.abstract)
+        for chunk in self.chunks:
+            chunk.text = without_nul(chunk.text)
+        if self.synthesis:
+            self.synthesis.summary = without_nul(self.synthesis.summary)
+            for claim in self.synthesis.claims:
+                claim.text = without_nul(claim.text)
+        return self
 
 
 class EvidenceJudgment(BaseModel):

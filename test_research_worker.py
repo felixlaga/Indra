@@ -536,3 +536,25 @@ async def test_rate_limit_during_synthesis_keeps_a_labelled_excerpt(repo):
     assert model.calls == 1
     summary = repo.get_session_snapshot(session.id).summaries[0]
     assert summary.text.startswith("Source excerpt (not model-validated)")
+
+
+async def test_nul_characters_from_pdfs_and_providers_are_stored_without_them(repo):
+    session = start(repo)
+
+    async def nul_source(*_):
+        p = paper()
+        p.abstract = "The method improves\x00 accuracy."
+        return [p]
+
+    async def nul_text(p):
+        chunks, note = await text(p)
+        chunks[0].text = "The method\x00 improves accuracy."
+        return chunks, note
+
+    result = await ResearchWorker(
+        repo, ResearchPipeline(repo, search=nul_source, full_text=nul_text)
+    ).run_once()
+    assert result.status.value == "succeeded"
+    stored = repo.get_session_snapshot(session.id)
+    assert "\x00" not in stored.papers[0].paper.abstract
+    assert "\x00" not in repo.list_paper_chunks(stored.papers[0].paper_id)[0].text

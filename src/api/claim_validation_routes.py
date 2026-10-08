@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+from dataclasses import replace
 
 from fastapi import APIRouter, HTTPException, Request
 
 from ..claims import EvidenceCandidate, EvidenceRetriever, split_passages
+from ..claims.embeddings import embedder_from_environment
 from ..claims.semantic_verifier import judge_passages
 from ..research.model import ResearchModel
 from .claim_validation_models import (
@@ -33,6 +36,7 @@ def _paper_candidates(paper, chunks=()) -> list[EvidenceCandidate]:
             page_start=chunk.page_start,
             page_end=chunk.page_end,
             section_title=chunk.section_title,
+            embedding=tuple(chunk.embedding) if chunk.embedding else None,
         )
         for chunk in chunks
     ]
@@ -112,8 +116,26 @@ def inspect_claim(claim_id: str, request: Request) -> ClaimInspection:
         raise
 
 
+async def _with_embeddings(claim_text, candidates, embedder):
+    """Embed the claim and any passages stored without vectors (abstracts)."""
+
+    if embedder is None:
+        return None, candidates
+    pending = [
+        n for n, c in enumerate(candidates)
+        if c.embedding is None and c.source_type == "paper_abstract"
+    ]
+    vectors = await asyncio.to_thread(
+        embedder.embed, [claim_text] + [candidates[n].evidence_text for n in pending]
+    )
+    candidates = list(candidates)
+    for n, vector in zip(pending, vectors[1:]):
+        candidates[n] = replace(candidates[n], embedding=vector)
+    return vectors[0], candidates
+
+
 async def validate_automatically(
-    repository, claim_id, payload, model=None, leased=None
+    repository, claim_id, payload, model=None, leased=None, embedder=None
 ):
     claim = repository.get_claim(claim_id)
     if (
@@ -137,8 +159,15 @@ async def validate_automatically(
             paper, repository.list_paper_chunks(paper.id)
         )
     ]
+    claim_embedding, candidates = await _with_embeddings(
+        claim.claim_text, candidates, embedder
+    )
     retrieved = _retriever.retrieve(
-        claim.claim_text, candidates, top_k=payload.top_k, min_score=payload.min_score
+        claim.claim_text,
+        candidates,
+        top_k=payload.top_k,
+        min_score=payload.min_score,
+        claim_embedding=claim_embedding,
     )
     judged = await judge_passages(claim.claim_text, retrieved, model)
     evidence = [decision for decision, _ in judged]
@@ -152,6 +181,7 @@ async def validate_automatically(
                 if model
                 else "retrieval_only",
                 "candidates_considered": len(candidates),
+                "retrieval": f"hybrid:{embedder.name}" if embedder else "lexical",
                 "judgments": judgments,
             },
             sort_keys=True,
@@ -178,7 +208,11 @@ async def auto_validate_claim(
     try:
         model = ResearchModel.from_environment()
         return await validate_automatically(
-            get_repository(request), claim_id, payload, model
+            get_repository(request),
+            claim_id,
+            payload,
+            model,
+            embedder=embedder_from_environment(),
         )
     except RepositoryError as exc:
         handle_repository_error(exc)

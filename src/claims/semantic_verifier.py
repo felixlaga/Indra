@@ -22,6 +22,7 @@ BATCH_INSTRUCTION = (
 def _unjudged_trace(retrieved) -> dict:
     return {
         "retrieval_score": retrieved.retrieval_score,
+        "semantic_score": retrieved.semantic_score,
         "strategy": "retrieval_only",
         "rationale": "No verification model configured; this passage requires review.",
     }
@@ -141,6 +142,7 @@ async def judge_passages(claim_text, retrieved: list, model):
                 _evidence(item.candidate, relation, quote),
                 {
                     "retrieval_score": item.retrieval_score,
+                    "semantic_score": item.semantic_score,
                     "strategy": "structured_evidence_judge_batch_v1",
                     "rationale": judgment.rationale,
                     "provenance": provenance,

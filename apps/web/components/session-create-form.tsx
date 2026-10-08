@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { indraApi } from "@/lib/api";
+import { sourceLabel } from "@/lib/format";
 import {
   DEFAULT_DEPTH,
   DEPTH_PRESETS,
@@ -18,7 +19,7 @@ interface SessionCreateFormProps {
 export function SessionCreateForm({ projectId }: SessionCreateFormProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [providers, setProviders] = useState<string[]>(["arxiv"]);
+  const [providers, setProviders] = useState<string[]>(["arxiv", "openalex"]);
   const [depth, setDepth] = useState(DEFAULT_DEPTH);
   const preset = depthPreset(depth);
   const [saving, setSaving] = useState(false);
@@ -67,14 +68,14 @@ export function SessionCreateForm({ projectId }: SessionCreateFormProps) {
         required
       />
       <div className="provider-row" aria-label="Source providers">
-        {["semantic_scholar", "arxiv"].map((provider) => (
+        {["arxiv", "openalex", "semantic_scholar"].map((provider) => (
           <label className="provider-toggle" key={provider}>
             <input
               type="checkbox"
               checked={providers.includes(provider)}
               onChange={() => toggleProvider(provider)}
             />
-            <span>{provider.replaceAll("_", " ")}</span>
+            <span>{sourceLabel(provider)}</span>
           </label>
         ))}
       </div>

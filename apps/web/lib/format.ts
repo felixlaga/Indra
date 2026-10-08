@@ -1,3 +1,14 @@
+const SOURCE_LABELS: Record<string, string> = {
+  arxiv: "arXiv",
+  openalex: "OpenAlex",
+  semantic_scholar: "Semantic Scholar",
+};
+
+/** Display name for a paper source such as "openalex". */
+export function sourceLabel(name: string): string {
+  return SOURCE_LABELS[name] ?? name.replaceAll("_", " ");
+}
+
 export function formatDate(value?: string | null): string {
   if (!value) return "Not available";
   const date = new Date(value);

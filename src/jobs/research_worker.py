@@ -11,9 +11,11 @@ from dotenv import load_dotenv
 
 from ..api.models import JobType
 from ..api.repository_factory import create_repository
+from ..claims.embeddings import embedder_from_environment
 from ..research.lease import LeaseLost
 from ..research.model import ResearchModel
 from ..research.pipeline import ResearchPipeline
+from ..research.providers import enrich_citations
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +84,13 @@ async def serve(once=False, poll_seconds=2):
             "Standalone workers require INDRA_REPOSITORY_BACKEND=postgres so API and worker share durable state"
         )
     worker = ResearchWorker(
-        repository, ResearchPipeline(repository, ResearchModel.from_environment())
+        repository,
+        ResearchPipeline(
+            repository,
+            ResearchModel.from_environment(),
+            embedder=embedder_from_environment(),
+            citations=enrich_citations,
+        ),
     )
     current = asyncio.current_task()
     loop = asyncio.get_running_loop()

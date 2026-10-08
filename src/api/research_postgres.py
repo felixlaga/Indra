@@ -6,6 +6,22 @@ from .models import Branch, Job, JobType
 ACTIVE_JOBS = "status IN ('queued','running','paused')"
 
 
+def _embedding_param(embedding, vector_column: bool):
+    if embedding is None:
+        return None
+    return "[" + ",".join(repr(float(v)) for v in embedding) + "]" if vector_column else list(embedding)
+
+
+def _embedding_value(value):
+    """pgvector returns text such as "[0.1,0.2]" without its adapter; arrays come back as lists."""
+
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return [float(v) for v in value.strip("[]").split(",") if v.strip()]
+    return [float(v) for v in value]
+
+
 class PostgresResearchWrites:
     def _research_lease(self, conn, leased: Job) -> Job:
         from ..research.lease import check_lease
@@ -60,11 +76,15 @@ class PostgresResearchWrites:
                 conn,
                 """
                 INSERT INTO papers (id, canonical_key, title, abstract, semantic_scholar_id, arxiv_id, doi,
-                    openalex_id, year, venue, citation_count, url, open_access_pdf_url, metadata)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    openalex_id, year, venue, citation_count, url, open_access_pdf_url, metadata, reference_count)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (canonical_key) DO UPDATE SET title=EXCLUDED.title,
                     abstract=COALESCE(EXCLUDED.abstract,papers.abstract), metadata=papers.metadata || EXCLUDED.metadata,
-                    open_access_pdf_url=COALESCE(EXCLUDED.open_access_pdf_url,papers.open_access_pdf_url)
+                    open_access_pdf_url=COALESCE(EXCLUDED.open_access_pdf_url,papers.open_access_pdf_url),
+                    openalex_id=COALESCE(papers.openalex_id,EXCLUDED.openalex_id),
+                    doi=COALESCE(papers.doi,EXCLUDED.doi),
+                    citation_count=COALESCE(EXCLUDED.citation_count,papers.citation_count),
+                    reference_count=COALESCE(EXCLUDED.reference_count,papers.reference_count)
                 RETURNING id
             """,
                 (
@@ -82,6 +102,7 @@ class PostgresResearchWrites:
                     paper.url,
                     paper.open_access_pdf_url,
                     _jsonb({**paper.metadata, "authors": paper.authors}),
+                    paper.reference_count,
                 ),
             )
             paper_id = str(row["id"])
@@ -125,11 +146,15 @@ class PostgresResearchWrites:
                     "\n\n".join(c.text for c in result.chunks) or paper.abstract,
                 ),
             )
+            vector_column = self._embedding_column_is_vector(conn)
             for chunk in result.chunks:
                 self._execute(
                     conn,
-                    """INSERT INTO paper_chunks(id,paper_id,document_id,chunk_index,text,page_start,page_end,section_title)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING""",
+                    """INSERT INTO paper_chunks(id,paper_id,document_id,chunk_index,text,page_start,page_end,
+                    section_title,embedding)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"""
+                    + ("%s::text::vector" if vector_column else "%s")
+                    + ") ON CONFLICT(id) DO NOTHING",
                     (
                         chunk.id,
                         paper_id,
@@ -139,6 +164,7 @@ class PostgresResearchWrites:
                         chunk.page_start,
                         chunk.page_end,
                         chunk.section_title,
+                        _embedding_param(chunk.embedding, vector_column),
                     ),
                 )
             if result.synthesis:
@@ -205,6 +231,18 @@ class PostgresResearchWrites:
         self._publish_inserted_events(events)
         return paper_id
 
+    def _embedding_column_is_vector(self, conn) -> bool:
+        """pgvector databases store vector; vector-free ones a float array."""
+
+        if getattr(self, "_vector_embeddings", None) is None:
+            row = self._fetch_one(
+                conn,
+                """SELECT format_type(atttypid, atttypmod) AS type FROM pg_attribute
+                WHERE attrelid='paper_chunks'::regclass AND attname='embedding'""",
+            )
+            self._vector_embeddings = row["type"].startswith("vector")
+        return self._vector_embeddings
+
     def list_paper_chunks(self, paper_id: str) -> list[PaperChunk]:
         with self._connect() as conn:
             paper = self._get_paper_row(conn, paper_id)
@@ -220,6 +258,7 @@ class PostgresResearchWrites:
                     "id": str(row["id"]),
                     "paper_id": str(row["paper_id"]),
                     "document_id": str(row["document_id"]),
+                    "embedding": _embedding_value(row.get("embedding")),
                 }
             )
             for row in rows

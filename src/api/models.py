@@ -61,8 +61,12 @@ class SessionCreate(BaseModel):
     @field_validator("source_providers")
     @classmethod
     def supported_sources(cls, value: list[str]) -> list[str]:
-        if not value or any(name not in {"arxiv", "semantic_scholar"} for name in value):
-            raise ValueError("Choose at least one source: arxiv or semantic_scholar")
+        if not value or any(
+            name not in {"arxiv", "semantic_scholar", "openalex"} for name in value
+        ):
+            raise ValueError(
+                "Choose at least one source: arxiv, semantic_scholar or openalex"
+            )
         return list(dict.fromkeys(value))
 
     @field_validator("parameters")

@@ -294,7 +294,7 @@ button { color: inherit; }
 .provider-row { display: flex; flex-wrap: wrap; gap: 9px; }
 .provider-toggle { cursor: pointer; }
 .provider-toggle input { position: absolute; opacity: 0; pointer-events: none; }
-.provider-toggle span { display: inline-flex; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; text-transform: capitalize; }
+.provider-toggle span { display: inline-flex; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; }
 .provider-toggle input:checked + span { border-color: #4d78a7; color: #c9e0ff; background: rgba(106,169,255,.1); }
 .session-create-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .session-create-footer p { margin: 0; color: var(--muted-2); font-size: 11px; }

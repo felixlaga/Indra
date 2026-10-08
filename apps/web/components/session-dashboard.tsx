@@ -16,7 +16,7 @@ import {
 import { HubInspector } from "@/components/session-hub/inspector";
 import { useSessionEventStream } from "@/hooks/use-session-event-stream";
 import { indraApi } from "@/lib/api";
-import { formatDate } from "@/lib/format";
+import { formatDate, sourceLabel } from "@/lib/format";
 import { uniquePapers, validationSummary } from "@/lib/session-hub.js";
 import type { EventRecord, ResearchMap, SessionSnapshot } from "@/lib/types";
 import type { ResearchAdvice } from "@/lib/advice-types";
@@ -427,7 +427,7 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
             <dd>
               {session.source_providers
                 .map((name) =>
-                  name === "arxiv" ? "arXiv" : name.replaceAll("_", " "),
+                  sourceLabel(name),
                 )
                 .join(", ")}
             </dd>

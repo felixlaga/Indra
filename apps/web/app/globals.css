@@ -485,7 +485,8 @@ button { color: inherit; }
 @media (max-width: 760px) {
   .app-header-inner, .page-heading, .page-shell { width: min(100% - 24px, 1500px); }
   .app-header-inner { align-items: flex-start; padding: 14px 0; }
-  .primary-nav { display: none; }
+  .primary-nav > a { display: none; }
+  .account-menu > span { display: none; }
   .page-heading { min-height: auto; padding: 28px 0 32px; align-items: flex-start; flex-direction: column; }
   .page-heading h1 { font-size: 32px; }
   .toolbar-row, .project-overview-strip, .session-create-footer, .session-row { align-items: stretch; flex-direction: column; }
@@ -511,3 +512,10 @@ button { color: inherit; }
 .paper-passage { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
 .paper-passage summary { cursor: pointer; font-size: 13px; }
 .paper-passage p { white-space: pre-wrap; line-height: 1.6; }
+
+.login-page { min-height: 100vh; display: grid; place-items: center; padding: 20px 16px; }
+.login-card { width: min(420px, 100%); }
+.login-card h1 { margin: 5px 0 0; font-size: 22px; }
+.login-actions { justify-content: space-between; flex-wrap: wrap; }
+.account-menu { display: inline-flex; align-items: center; gap: 10px; min-width: 0; color: var(--muted); font-size: 12px; }
+.account-menu > span { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

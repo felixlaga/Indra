@@ -13,31 +13,32 @@ import type {
   SessionCreate,
   SessionSnapshot,
   EventRecord,
+  AuthStatus,
 } from "@/lib/types";
 
-const API_URL = (
-  process.env.NEXT_PUBLIC_INDRA_API_URL ?? "http://localhost:8000"
-).replace(/\/$/, "");
-
-const API_KEY = process.env.NEXT_PUBLIC_INDRA_API_KEY?.trim();
-
-export function indraAuthHeaders(): HeadersInit {
-  return API_KEY ? { "X-Indra-API-Key": API_KEY } : {};
-}
+// The browser talks only to this app; it forwards to the API server-side with the
+// signed-in user's token, so no API address, key or token reaches page code.
+const API_URL = "/api/indra";
 
 export function indraUrl(path: string): string {
   return `${API_URL}${path}`;
 }
 
-export function indraUrlWithApiKey(path: string): string {
-  const url = new URL(indraUrl(path));
-  if (API_KEY) url.searchParams.set("api_key", API_KEY);
-  return url.toString();
+/** Same-origin download link; the sign-in cookie goes with it. */
+export function exportDownloadUrl(sessionId: string, format: string): string {
+  return indraUrl(`/sessions/${sessionId}/exports/${format}`);
 }
 
-/** Plain links cannot send headers, so downloads carry the key as a query parameter. */
-export function exportDownloadUrl(sessionId: string, format: string): string {
-  return indraUrlWithApiKey(`/sessions/${sessionId}/exports/${format}`);
+/** With accounts enabled, an expired or missing sign-in sends the user to sign in. */
+export function redirectToSignIn(detail: unknown): boolean {
+  const accounts =
+    typeof detail === "object" && detail !== null && (detail as { mode?: unknown }).mode === "accounts";
+  if (!accounts || typeof window === "undefined") return false;
+  if (window.location.pathname !== "/login") {
+    const next = `${window.location.pathname}${window.location.search}`;
+    window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+  }
+  return true;
 }
 
 export class ApiError extends Error {
@@ -57,7 +58,6 @@ async function request<T>(path: string, init?: RequestInit, polls = 0): Promise<
     headers: {
       Accept: "application/json",
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...indraAuthHeaders(),
       ...init?.headers,
     },
     cache: "no-store",
@@ -72,6 +72,7 @@ async function request<T>(path: string, init?: RequestInit, polls = 0): Promise<
     } catch {
       // Keep non-JSON details while retaining the HTTP status below.
     }
+    if (response.status === 401) redirectToSignIn(detail);
     const message =
       typeof detail === "object" && detail !== null && "detail" in detail
         ? String((detail as { detail: unknown }).detail)
@@ -100,6 +101,7 @@ async function request<T>(path: string, init?: RequestInit, polls = 0): Promise<
 
 export const indraApi = {
   baseUrl: API_URL,
+  getAuthStatus: () => request<AuthStatus>("/auth/me"),
   listProjects: () => request<Project[]>("/projects"),
   getProject: (projectId: string) => request<Project>(`/projects/${projectId}`),
   createProject: (payload: ProjectCreate) =>
@@ -151,3 +153,26 @@ export const indraApi = {
 };
 
 export const erlaApi = indraApi;
+
+async function authRequest(action: "login" | "register" | "logout", body?: unknown) {
+  const response = await fetch(`/api/auth/${action}`, {
+    method: "POST",
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
+  if (!response.ok && response.status !== 204) {
+    const detail = await response.json().catch(() => ({}));
+    const message = Array.isArray(detail?.detail)
+      ? detail.detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join(" ")
+      : detail?.detail;
+    throw new ApiError(message || `Request failed with status ${response.status}`, response.status, detail);
+  }
+}
+
+export const authApi = {
+  login: (email: string, password: string) => authRequest("login", { email, password }),
+  register: (email: string, password: string, name?: string) =>
+    authRequest("register", { email, password, name: name || undefined }),
+  logout: () => authRequest("logout"),
+};

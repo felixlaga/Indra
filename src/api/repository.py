@@ -47,6 +47,7 @@ from .models import (
     Summary,
 )
 from .research_loop import ResearchLoopBridge
+from .accounts_repository import MemoryAccounts
 from .research_memory import MemoryResearchWrites
 from .event_repository import MemoryEventReads
 from .view_repository import MemoryViewWrites
@@ -99,15 +100,19 @@ class ProductRepository(Protocol):
 
     def fail_research(self, leased: Job, error: str, retryable: bool = True) -> Job: ...
 
-    def create_project(self, payload: ProjectCreate) -> Project: ...
+    def create_project(self, payload: ProjectCreate, owner_id: str | None = None) -> Project: ...
 
-    def list_projects(self) -> list[Project]: ...
+    def list_projects(self, owner_id: str | None = None) -> list[Project]: ...
 
     def get_project(self, project_id: str) -> Project: ...
 
-    def create_session(self, payload: SessionCreate) -> ResearchSession: ...
+    def create_session(self, payload: SessionCreate, owner_id: str | None = None) -> ResearchSession: ...
 
-    def list_sessions(self) -> list[ResearchSession]: ...
+    def list_sessions(self, owner_id: str | None = None) -> list[ResearchSession]: ...
+
+    def resource_owner(self, kind: str, resource_id: str) -> str | None: ...
+
+    def paper_visible_to(self, paper_id: str, owner_id: str) -> bool: ...
 
     def get_session(self, session_id: str) -> ResearchSession: ...
 
@@ -211,7 +216,9 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class InMemoryRepository(MemoryResearchWrites, MemoryEventReads, MemoryViewWrites):
+class InMemoryRepository(
+    MemoryResearchWrites, MemoryEventReads, MemoryViewWrites, MemoryAccounts
+):
     """Process-local repository used until durable storage is added."""
 
     def __init__(
@@ -234,6 +241,11 @@ class InMemoryRepository(MemoryResearchWrites, MemoryEventReads, MemoryViewWrite
         self._research_views: dict[str, dict] = {}
         self._hypotheses: dict[str, Hypothesis] = {}
         self._decisions: dict[str, AgentDecision] = {}
+        self._users: dict = {}
+        self._password_hashes: dict[str, str] = {}
+        self._user_sessions: dict[str, tuple] = {}
+        self._project_owner: dict[str, str] = {}
+        self._session_owner: dict[str, str] = {}
         self._event_subscribers: dict[str, list[Queue[Event]]] = {}
         self._runtime_loop_bindings: dict[str, RuntimeLoopBinding] = {}
         self._runtime_loop_states: dict[str, LoopState] = {}
@@ -242,7 +254,7 @@ class InMemoryRepository(MemoryResearchWrites, MemoryEventReads, MemoryViewWrite
         self._claim_verifier = claim_verifier or ClaimVerifier()
         self._lock = RLock()
 
-    def create_project(self, payload: ProjectCreate) -> Project:
+    def create_project(self, payload: ProjectCreate, owner_id: str | None = None) -> Project:
         """Create a project."""
 
         with self._lock:
@@ -257,13 +269,18 @@ class InMemoryRepository(MemoryResearchWrites, MemoryEventReads, MemoryViewWrite
                 updated_at=now,
             )
             self._projects[project.id] = project
+            if owner_id:
+                self._project_owner[project.id] = owner_id
             return project
 
-    def list_projects(self) -> list[Project]:
-        """List projects."""
+    def list_projects(self, owner_id: str | None = None) -> list[Project]:
+        """List projects, optionally only one owner's."""
 
         with self._lock:
-            return list(self._projects.values())
+            return [
+                p for p in self._projects.values()
+                if owner_id is None or self._project_owner.get(p.id) == owner_id
+            ]
 
     def get_project(self, project_id: str) -> Project:
         """Get a project."""
@@ -274,7 +291,7 @@ class InMemoryRepository(MemoryResearchWrites, MemoryEventReads, MemoryViewWrite
             except KeyError as exc:
                 raise NotFoundError("Project not found") from exc
 
-    def create_session(self, payload: SessionCreate) -> ResearchSession:
+    def create_session(self, payload: SessionCreate, owner_id: str | None = None) -> ResearchSession:
         """Create a research session and root branch."""
 
         with self._lock:
@@ -294,6 +311,8 @@ class InMemoryRepository(MemoryResearchWrites, MemoryEventReads, MemoryViewWrite
                 updated_at=now,
             )
             self._sessions[session.id] = session
+            if owner_id:
+                self._session_owner[session.id] = owner_id
 
             runtime_loop = self._loop_bridge.create_loop(session)
             root_branch = self._loop_bridge.to_api_branch(
@@ -337,11 +356,14 @@ class InMemoryRepository(MemoryResearchWrites, MemoryEventReads, MemoryViewWrite
             )
             return session
 
-    def list_sessions(self) -> list[ResearchSession]:
-        """List sessions."""
+    def list_sessions(self, owner_id: str | None = None) -> list[ResearchSession]:
+        """List sessions, optionally only one owner's."""
 
         with self._lock:
-            return list(self._sessions.values())
+            return [
+                s for s in self._sessions.values()
+                if owner_id is None or self._session_owner.get(s.id) == owner_id
+            ]
 
     def get_session(self, session_id: str) -> ResearchSession:
         """Get a session."""

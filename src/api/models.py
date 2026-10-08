@@ -24,6 +24,41 @@ from ..domain.enums import (
 )
 
 
+class User(BaseModel):
+    """A signed-in Indra account."""
+
+    id: str
+    email: str
+    name: str | None = None
+    created_at: datetime
+
+
+class AuthCredentials(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=10, max_length=256)
+    name: str | None = Field(default=None, max_length=200)
+
+    @field_validator("email")
+    @classmethod
+    def normalized_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("Enter a valid email address")
+        return value
+
+
+class AuthResult(BaseModel):
+    token: str
+    user: User
+    expires_at: datetime
+
+
+class AuthStatus(BaseModel):
+    mode: str
+    user: User | None = None
+    signup_open: bool = False
+
+
 class ProjectCreate(BaseModel):
     """Payload for creating a project."""
 

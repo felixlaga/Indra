@@ -43,6 +43,7 @@ from .models import (
     SessionStatus,
     Summary,
 )
+from .accounts_repository import PostgresAccounts
 from .repository import ConflictError, EventSubscription, NotFoundError, utc_now
 from .research_loop import ResearchLoopBridge
 from .research_postgres import PostgresResearchWrites
@@ -70,7 +71,9 @@ def _jsonb(value: Any) -> Any:
     return Jsonb(value)
 
 
-class PostgresRepository(PostgresResearchWrites, PostgresEventReads, PostgresViewWrites):
+class PostgresRepository(
+    PostgresResearchWrites, PostgresEventReads, PostgresViewWrites, PostgresAccounts
+):
     """Durable repository using the Phase 2 Postgres schema."""
 
     def __init__(
@@ -94,13 +97,13 @@ class PostgresRepository(PostgresResearchWrites, PostgresEventReads, PostgresVie
         self._pool = None
         self._pool_lock = Lock()
 
-    def create_project(self, payload: ProjectCreate) -> Project:
+    def create_project(self, payload: ProjectCreate, owner_id: str | None = None) -> Project:
         with self._connect() as conn:
             row = self._fetch_one(
                 conn,
                 """
-                INSERT INTO projects (title, description, field, settings)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO projects (title, description, field, settings, user_id)
+                VALUES (%s, %s, %s, %s, %s)
                 RETURNING *
                 """,
                 (
@@ -108,15 +111,18 @@ class PostgresRepository(PostgresResearchWrites, PostgresEventReads, PostgresVie
                     payload.description,
                     payload.field,
                     _jsonb(payload.settings),
+                    owner_id,
                 ),
             )
             return _project_from_row(row)
 
-    def list_projects(self) -> list[Project]:
+    def list_projects(self, owner_id: str | None = None) -> list[Project]:
         with self._connect() as conn:
             rows = self._fetch_all(
                 conn,
-                "SELECT * FROM projects ORDER BY created_at DESC",
+                "SELECT * FROM projects WHERE %s::uuid IS NULL OR user_id = %s::uuid "
+                "ORDER BY created_at DESC",
+                (owner_id, owner_id),
             )
             return [_project_from_row(row) for row in rows]
 
@@ -131,7 +137,7 @@ class PostgresRepository(PostgresResearchWrites, PostgresEventReads, PostgresVie
                 raise NotFoundError("Project not found")
             return _project_from_row(row)
 
-    def create_session(self, payload: SessionCreate) -> ResearchSession:
+    def create_session(self, payload: SessionCreate, owner_id: str | None = None) -> ResearchSession:
         pending_events: list[InsertedEvent] = []
         with self._connect() as conn:
             if payload.project_id:
@@ -148,9 +154,9 @@ class PostgresRepository(PostgresResearchWrites, PostgresEventReads, PostgresVie
                 """
                 INSERT INTO research_sessions (
                   project_id, initial_query, status, source_providers,
-                  filters, parameters
+                  filters, parameters, user_id
                 )
-                VALUES (%s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
                 """,
                 (
@@ -160,6 +166,7 @@ class PostgresRepository(PostgresResearchWrites, PostgresEventReads, PostgresVie
                     list(payload.source_providers),
                     _jsonb(payload.filters),
                     _jsonb(payload.parameters),
+                    owner_id,
                 ),
             )
             session = _session_from_row(session_row)
@@ -248,11 +255,13 @@ class PostgresRepository(PostgresResearchWrites, PostgresEventReads, PostgresVie
         self._publish_inserted_events(pending_events)
         return session
 
-    def list_sessions(self) -> list[ResearchSession]:
+    def list_sessions(self, owner_id: str | None = None) -> list[ResearchSession]:
         with self._connect() as conn:
             rows = self._fetch_all(
                 conn,
-                "SELECT * FROM research_sessions ORDER BY created_at DESC",
+                "SELECT * FROM research_sessions WHERE %s::uuid IS NULL OR user_id = %s::uuid "
+                "ORDER BY created_at DESC",
+                (owner_id, owner_id),
             )
             return [_session_from_row(row) for row in rows]
 

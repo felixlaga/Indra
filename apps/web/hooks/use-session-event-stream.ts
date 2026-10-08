@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { indraAuthHeaders, indraUrlWithApiKey } from "@/lib/api";
+import { indraUrl, redirectToSignIn } from "@/lib/api";
 import type { EventRecord } from "@/lib/types";
 
 interface StreamState {
@@ -50,13 +50,16 @@ export function useSessionEventStream(
     async function connect() {
       try {
         const response = await fetch(
-          indraUrlWithApiKey(`/sessions/${sessionId}/events/stream?${cursor ? `cursor=${encodeURIComponent(cursor)}` : "replay=true"}`),
+          indraUrl(`/sessions/${sessionId}/events/stream?${cursor ? `cursor=${encodeURIComponent(cursor)}` : "replay=true"}`),
           {
-            headers: { Accept: "text/event-stream", ...indraAuthHeaders() },
+            headers: { Accept: "text/event-stream" },
             cache: "no-store",
             signal: controller.signal,
           },
         );
+        if (response.status === 401) {
+          redirectToSignIn(await response.json().catch(() => null));
+        }
         if (!response.ok || !response.body) {
           throw new Error(`Event stream failed with status ${response.status}`);
         }

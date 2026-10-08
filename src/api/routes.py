@@ -47,6 +47,14 @@ def get_repository(request: Request) -> ProductRepository:
     return request.app.state.repository
 
 
+def owner(request: Request) -> str | None:
+    """The signed-in user's ID, or None when accounts are off or the caller is a service."""
+
+    from .auth import principal
+
+    return principal(request).owner_id
+
+
 def handle_repository_error(exc: RepositoryError) -> None:
     """Translate repository errors into HTTP errors."""
 
@@ -70,16 +78,16 @@ def health() -> dict[str, str]:
     status_code=status.HTTP_201_CREATED,
 )
 def create_project(payload: ProjectCreate, request: Request) -> Project:
-    """Create a project."""
+    """Create a project owned by the signed-in user."""
 
-    return get_repository(request).create_project(payload)
+    return get_repository(request).create_project(payload, owner_id=owner(request))
 
 
 @router.get("/projects", response_model=list[Project])
 def list_projects(request: Request) -> list[Project]:
-    """List projects."""
+    """List the signed-in user's projects (all projects without accounts)."""
 
-    return get_repository(request).list_projects()
+    return get_repository(request).list_projects(owner_id=owner(request))
 
 
 @router.get("/projects/{project_id}", response_model=Project)
@@ -101,8 +109,14 @@ def get_project(project_id: str, request: Request) -> Project:
 def create_session(payload: SessionCreate, request: Request) -> ResearchSession:
     """Create a session and initial root branch."""
 
+    repository = get_repository(request)
     try:
-        return get_repository(request).create_session(payload)
+        user = owner(request)
+        if user and payload.project_id and (
+            repository.resource_owner("project", payload.project_id) != user
+        ):
+            raise NotFoundError("Project not found")
+        return repository.create_session(payload, owner_id=user)
     except RepositoryError as exc:
         handle_repository_error(exc)
         raise
@@ -110,9 +124,9 @@ def create_session(payload: SessionCreate, request: Request) -> ResearchSession:
 
 @router.get("/sessions", response_model=list[ResearchSession])
 def list_sessions(request: Request) -> list[ResearchSession]:
-    """List sessions."""
+    """List the signed-in user's sessions (all sessions without accounts)."""
 
-    return get_repository(request).list_sessions()
+    return get_repository(request).list_sessions(owner_id=owner(request))
 
 
 @router.get("/sessions/{session_id}", response_model=ResearchSession)

@@ -56,3 +56,30 @@ jobs:
           assert not missing, f'missing routes: {missing}'"
       - name: Run the full test suite
         run: uv run pytest -q
+
+  compose:
+    # Builds both images and runs the whole stack the way deploy/.env describes it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write a throwaway deployment environment
+        run: |
+          {
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
+            echo "INDRA_API_KEY=$(openssl rand -hex 24)"
+            echo "INDRA_AUTH_MODE=accounts"
+            echo "INDRA_ALLOW_SIGNUP=false"
+          } > deploy/.env
+      - name: Build and start the stack
+        run: docker compose --env-file deploy/.env up -d --build
+      - name: Smoke-test through the dashboard
+        run: scripts/compose-smoke.sh
+      - name: Migrations applied with pgvector
+        run: |
+          docker compose --env-file deploy/.env exec -T postgres \
+            psql -U indra -d indra -Atc "select name, without_vectors from indra_schema_migrations order by name" \
+            | tee /dev/stderr | grep -q "0005_accounts.sql|f"
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose --env-file deploy/.env logs --no-color

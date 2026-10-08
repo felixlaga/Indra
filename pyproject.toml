@@ -36,3 +36,13 @@ indra = "src.cli:main"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+# Linux installs (containers, CI) use CPU-only PyTorch instead of the multi-gigabyte
+# CUDA build; macOS and Windows resolve from PyPI as before.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

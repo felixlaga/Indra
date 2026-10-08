@@ -99,6 +99,15 @@ HALUGATE_URL=http://localhost:8000
 | `INDRA_EMBEDDING_MODEL` | Optional local embedding model for semantic evidence retrieval (downloads on first use) | `sentence-transformers/all-MiniLM-L6-v2` |
 | `HALUGATE_URL` | URL of the HaluGate hallucination-detection service used by the CLI research pipeline | `http://localhost:8000` |
 
+## Deploy with Docker
+
+```bash
+cp deploy/.env.example deploy/.env    # set POSTGRES_PASSWORD and INDRA_API_KEY
+docker compose --env-file deploy/.env up -d --build
+```
+
+This runs Postgres, migrations, the API, both workers and the dashboard at `http://localhost:3000`, with accounts on. See [Phase 8](docs/research/PHASE_8.md) for what runs where and how to expose it over HTTPS.
+
 ## Run the API
 
 ```bash
@@ -244,7 +253,6 @@ Implementation notes:
 
 - Add database pagination for paper/claim snapshots and graph virtualization for larger sessions.
 - Add calibrated domain-specific inference where appropriate.
-- Deploy Postgres, migrations, API, workers, and dashboard as one system.
 - Add cache eviction/versioning and asynchronous export jobs if session scale requires them.
 
 ## Core rule

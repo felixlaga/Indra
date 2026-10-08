@@ -72,6 +72,7 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
   const [olderError, setOlderError] = useState<string | null>(null);
   const seen = useRef(new Map<string, EventRecord>());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastLoadMs = useRef(0);
   const requestId = useRef(0);
   const inspectorRef = useRef<HTMLElement | null>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -83,8 +84,10 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
   }, [selectedId, type, !!snapshot]);
   const load = useCallback(async () => {
     const token = ++requestId.current;
+    const started = performance.now();
     try {
       const next = await indraApi.getSessionSnapshot(sessionId);
+      lastLoadMs.current = performance.now() - started;
       if (token !== requestId.current) return;
       for (const event of next.events) seen.current.set(event.id, event);
       next.events = [...seen.current.values()].sort((a, b) =>
@@ -141,11 +144,12 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
           : current,
       );
       // Coalesce bursts without postponing refresh forever; progress is patched locally.
+      // Large sessions back off in proportion to how long the last load took.
       if (event.event_type !== "research_progress" && !event.event_type.startsWith("derived_view_") && !timer.current)
         timer.current = setTimeout(() => {
           timer.current = null;
           void load();
-        }, 500);
+        }, Math.min(10000, Math.max(500, lastLoadMs.current * 4)));
     },
     [load],
   );

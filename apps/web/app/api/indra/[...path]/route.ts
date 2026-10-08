@@ -50,11 +50,21 @@ async function forward(
     const value = upstream.headers.get(name);
     if (value) responseHeaders.set(name, value);
   }
-  // Streams (server-sent events) pass through without buffering.
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: responseHeaders,
-  });
+  // Large snapshots and exports are repetitive JSON or text, so compress them for the
+  // browser; event streams pass through unbuffered.
+  let body = upstream.body;
+  const type = upstream.headers.get("content-type") ?? "";
+  if (
+    body &&
+    !type.startsWith("text/event-stream") &&
+    /json|text|csv/.test(type) &&
+    /\bgzip\b/.test(request.headers.get("accept-encoding") ?? "")
+  ) {
+    body = body.pipeThrough(new CompressionStream("gzip"));
+    responseHeaders.set("content-encoding", "gzip");
+    responseHeaders.set("vary", "accept-encoding");
+  }
+  return new Response(body, { status: upstream.status, headers: responseHeaders });
 }
 
 export { forward as GET, forward as POST, forward as PATCH, forward as DELETE };

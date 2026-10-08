@@ -116,7 +116,7 @@ export const indraApi = {
       body: JSON.stringify(payload),
     }),
   getSessionSnapshot: (sessionId: string) =>
-    request<SessionSnapshot>(`/sessions/${sessionId}/state`),
+    request<SessionSnapshot>(`/sessions/${sessionId}/state?compact=true`),
   getResearchMap: (sessionId: string, signal?: AbortSignal) =>
     request<ResearchMap>(`/sessions/${sessionId}/map`, { signal }, 60),
   getResearchAdvice: (sessionId: string, signal?: AbortSignal) =>

@@ -141,3 +141,14 @@ test("research view wait has a finite timeout with actionable queue details", as
   await assert.rejects(indraApi.getResearchAdvice("s1"), /Start the view worker/);
   assert.equal(calls, 61);
 });
+
+test("the session hub asks for the compact snapshot", async (t) => {
+  const { indraApi } = await loadApi();
+  const urls = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    urls.push(url);
+    return Response.json({ events: [] });
+  });
+  await indraApi.getSessionSnapshot("s1");
+  assert.deepEqual(urls, ["/api/indra/sessions/s1/state?compact=true"]);
+});

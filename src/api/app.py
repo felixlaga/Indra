@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from .claim_validation_routes import router as claim_validation_router
 from .event_notifications import EventNotifications
@@ -71,6 +72,8 @@ def create_app(repository: ProductRepository | None = None, *, run_memory_views:
         ),
     )
     app.middleware("http")(authenticate)
+    # Snapshots and exports are large, repetitive JSON and text; event streams are excluded.
+    app.add_middleware(GZipMiddleware, minimum_size=2048)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(),

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from .repository import ProductRepository, RepositoryError
+from .view_repository import outdated
 from .routes import get_repository, handle_repository_error
 
 router = APIRouter()
@@ -13,7 +14,11 @@ def research_view(
     repository: ProductRepository, session_id: str, kind: str
 ) -> JSONResponse:
     row = repository.request_views(session_id)
-    if row["status"] == "ready" and row["source_revision"] == row["requested_revision"]:
+    if (
+        row["status"] == "ready"
+        and row["source_revision"] == row["requested_revision"]
+        and not outdated(row)
+    ):
         return JSONResponse(
             row["result"][kind],
             headers={

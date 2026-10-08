@@ -9,6 +9,7 @@ Indra is not primarily a generic chatbot or writing assistant. Its product surfa
 - Academic search through arXiv, OpenAlex and Semantic Scholar, with OpenAlex citation links ([Phase 6](docs/research/PHASE_6.md)).
 - Optional semantic evidence retrieval with a local embedding model, and OCR for scanned PDFs when Tesseract is installed.
 - Optional accounts: sign-in, per-user projects and sessions, and a dashboard that keeps tokens and keys server-side ([Phase 7](docs/research/PHASE_7.md)).
+- Docker Compose deployment of the whole system ([Phase 8](docs/research/PHASE_8.md)) and measured large-session performance ([Phase 9](docs/research/PHASE_9.md)).
 - Composite multi-provider search with parallel, fallback, and single-source strategies.
 - PDF text extraction and OpenRouter-compatible summarization.
 - Recursive research orchestration with branches, loops, reflection, and hypothesis generation.
@@ -249,11 +250,11 @@ Implementation notes:
 - `docs/phase7/RESEARCH_ADVISOR_MVP.md`
 - `docs/phase8/EXPORTS_MVP.md`
 
-## Production-hardening work still required
+## Remaining work
 
-- Add database pagination for paper/claim snapshots and graph virtualization for larger sessions.
-- Add calibrated domain-specific inference where appropriate.
-- Add cache eviction/versioning and asynchronous export jobs if session scale requires them.
+- Measure live model quality of Scout plans, hypotheses and claim checks against labelled examples from a research field (see `src/research/evaluate.py`; the labels need a domain expert).
+- Password reset, sign-in rate limiting and project sharing for multi-user deployments.
+- Raise the research limits, and with them revisit [Phase 9](docs/research/PHASE_9.md)'s measurements, only if larger sessions are needed.
 
 ## Core rule
 

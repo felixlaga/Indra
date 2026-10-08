@@ -83,6 +83,58 @@ async def test_model_judgment_is_schema_checked_and_preserves_quote():
     assert evidence.score is None
 
 
+def _judgment_response():
+    return httpx.Response(
+        200,
+        json={
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "relation": "insufficient",
+                                "quote": "",
+                                "rationale": "Not enough detail.",
+                            }
+                        )
+                    },
+                }
+            ]
+        },
+    )
+
+
+async def test_short_rate_limit_is_retried_once(monkeypatch):
+    from src.claims.semantic_verifier import EvidenceJudgment
+
+    responses = [httpx.Response(429, headers={"retry-after": "0"}), _judgment_response()]
+    model = ResearchModel(
+        "fixture-key",
+        "fixture-model",
+        transport=httpx.MockTransport(lambda request: responses.pop(0)),
+    )
+    value, _ = await model.generate(EvidenceJudgment, "Judge.", {"claim": "x"})
+    assert value.relation == "insufficient"
+    assert not responses
+
+
+@pytest.mark.parametrize("headers", [{"retry-after": "3600"}, {"retry-after": "0"}])
+async def test_long_or_repeated_rate_limit_stops_model_use(headers):
+    from src.claims.semantic_verifier import EvidenceJudgment
+    from src.research.model import ModelRateLimited
+
+    model = ResearchModel(
+        "fixture-key",
+        "fixture-model",
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(429, headers=headers)
+        ),
+    )
+    with pytest.raises(ModelRateLimited):
+        await model.generate(EvidenceJudgment, "Judge.", {"claim": "x"})
+
+
 @pytest.mark.parametrize(
     "content",
     [

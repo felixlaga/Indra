@@ -45,7 +45,8 @@ def extract_pdf(data: bytes, paper_id: str, source_url: str) -> list[PaperChunk]
             raise ValueError("PDF exceeds the 300-page research limit")
         total = 0
         for page_number, page in enumerate(document, 1):
-            text = page.get_text().strip()
+            # PDFs can embed NUL characters, which PostgreSQL text cannot store.
+            text = page.get_text().replace("\x00", "").strip()
             total += len(text)
             if total > 1_000_000:
                 raise ValueError("PDF text exceeds the research limit")

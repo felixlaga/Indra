@@ -1,6 +1,6 @@
 """Transactional, fenced research writes for Postgres."""
 
-from ..research.models import PaperChunk, PaperResult, stable_id
+from ..research.models import READ_REASON, PaperChunk, PaperResult, stable_id
 from .models import Branch, Job, JobType
 
 ACTIVE_JOBS = "status IN ('queued','running','paused')"
@@ -72,63 +72,21 @@ class PostgresResearchWrites:
         paper = result.paper
         with self._connect() as conn:
             self._research_lease(conn, leased)
-            row = self._fetch_one(
-                conn,
-                """
-                INSERT INTO papers (id, canonical_key, title, abstract, semantic_scholar_id, arxiv_id, doi,
-                    openalex_id, year, venue, citation_count, url, open_access_pdf_url, metadata, reference_count)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (canonical_key) DO UPDATE SET title=EXCLUDED.title,
-                    abstract=COALESCE(EXCLUDED.abstract,papers.abstract), metadata=papers.metadata || EXCLUDED.metadata,
-                    open_access_pdf_url=COALESCE(EXCLUDED.open_access_pdf_url,papers.open_access_pdf_url),
-                    openalex_id=COALESCE(papers.openalex_id,EXCLUDED.openalex_id),
-                    doi=COALESCE(papers.doi,EXCLUDED.doi),
-                    citation_count=COALESCE(EXCLUDED.citation_count,papers.citation_count),
-                    reference_count=COALESCE(EXCLUDED.reference_count,papers.reference_count)
-                RETURNING id
-            """,
-                (
-                    paper.id,
-                    paper.canonical_key,
-                    paper.title,
-                    paper.abstract,
-                    paper.semantic_scholar_id,
-                    paper.arxiv_id,
-                    paper.doi,
-                    paper.openalex_id,
-                    paper.year,
-                    paper.venue,
-                    paper.citation_count,
-                    paper.url,
-                    paper.open_access_pdf_url,
-                    _jsonb({**paper.metadata, "authors": paper.authors}),
-                    paper.reference_count,
-                ),
-            )
-            paper_id = str(row["id"])
-            for index, author in enumerate(paper.authors):
-                self._execute(
-                    conn,
-                    """INSERT INTO paper_authors(id,paper_id,name,author_id,position)
-                    VALUES (%s,%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING""",
-                    (
-                        stable_id(paper_id, "author", str(index)),
-                        paper_id,
-                        author.get("name") or "Unknown",
-                        author.get("author_id"),
-                        index,
-                    ),
-                )
+            paper_id = self._upsert_paper(conn, paper)
             self._execute(
                 conn,
                 """INSERT INTO session_papers(id,session_id,branch_id,paper_id,selected,discovery_method,selection_reason)
-                VALUES (%s,%s,%s,%s,true,'query_search',%s) ON CONFLICT(id) DO NOTHING""",
+                VALUES (%s,%s,%s,%s,true,'query_search',COALESCE(%s,%s))
+                ON CONFLICT(id) DO UPDATE SET selected=true,
+                    selection_reason=COALESCE(%s, session_papers.selection_reason)""",
                 (
                     stable_id(leased.session_id, leased.branch_id or "", paper_id),
                     leased.session_id,
                     leased.branch_id,
                     paper_id,
-                    "Selected from provider relevance ranking within the session paper limit.",
+                    result.selection_reason,
+                    READ_REASON,
+                    result.selection_reason,
                 ),
             )
             document_id = stable_id(paper_id, result.source_url or "abstract")
@@ -230,6 +188,94 @@ class PostgresResearchWrites:
             )
         self._publish_inserted_events(events)
         return paper_id
+
+    def _upsert_paper(self, conn, paper) -> str:
+        """Store or merge a paper by canonical key and return its stored ID."""
+
+        from .postgres_repository import _jsonb
+
+        row = self._fetch_one(
+            conn,
+            """
+            INSERT INTO papers (id, canonical_key, title, abstract, semantic_scholar_id, arxiv_id, doi,
+                openalex_id, year, venue, citation_count, url, open_access_pdf_url, metadata, reference_count)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (canonical_key) DO UPDATE SET title=EXCLUDED.title,
+                abstract=COALESCE(EXCLUDED.abstract,papers.abstract), metadata=papers.metadata || EXCLUDED.metadata,
+                open_access_pdf_url=COALESCE(EXCLUDED.open_access_pdf_url,papers.open_access_pdf_url),
+                openalex_id=COALESCE(papers.openalex_id,EXCLUDED.openalex_id),
+                doi=COALESCE(papers.doi,EXCLUDED.doi),
+                citation_count=COALESCE(EXCLUDED.citation_count,papers.citation_count),
+                reference_count=COALESCE(EXCLUDED.reference_count,papers.reference_count)
+            RETURNING id
+        """,
+            (
+                paper.id,
+                paper.canonical_key,
+                paper.title,
+                paper.abstract,
+                paper.semantic_scholar_id,
+                paper.arxiv_id,
+                paper.doi,
+                paper.openalex_id,
+                paper.year,
+                paper.venue,
+                paper.citation_count,
+                paper.url,
+                paper.open_access_pdf_url,
+                _jsonb({**paper.metadata, "authors": paper.authors}),
+                paper.reference_count,
+            ),
+        )
+        paper_id = str(row["id"])
+        for index, author in enumerate(paper.authors):
+            self._execute(
+                conn,
+                """INSERT INTO paper_authors(id,paper_id,name,author_id,position)
+                VALUES (%s,%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING""",
+                (
+                    stable_id(paper_id, "author", str(index)),
+                    paper_id,
+                    author.get("name") or "Unknown",
+                    author.get("author_id"),
+                    index,
+                ),
+            )
+        return paper_id
+
+    def save_discovered_papers(self, leased: Job, papers: list, reason: str) -> int:
+        """Link candidates a branch found but did not read, for the research map."""
+
+        if not papers:
+            return 0
+        events = []
+        with self._connect() as conn:
+            self._research_lease(conn, leased)
+            for paper in papers:
+                paper_id = self._upsert_paper(conn, paper)
+                self._execute(
+                    conn,
+                    """INSERT INTO session_papers(id,session_id,branch_id,paper_id,selected,discovery_method,selection_reason)
+                    VALUES (%s,%s,%s,%s,false,'query_search',%s) ON CONFLICT(id) DO NOTHING""",
+                    (
+                        stable_id(leased.session_id, leased.branch_id or "", paper_id),
+                        leased.session_id,
+                        leased.branch_id,
+                        paper_id,
+                        reason,
+                    ),
+                )
+            events.append(
+                self._insert_event(
+                    conn,
+                    session_id=leased.session_id,
+                    branch_id=leased.branch_id,
+                    event_type="papers_found",
+                    payload={"count": len(papers)},
+                )
+            )
+        self._publish_inserted_events(events)
+        return len(papers)
 
     def _embedding_column_is_vector(self, conn) -> bool:
         """pgvector databases store vector; vector-free ones a float array."""

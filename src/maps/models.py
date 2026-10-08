@@ -35,6 +35,9 @@ class ResearchMapNode(BaseModel):
     citation_count: int = Field(default=0, ge=0)
     influential_citation_count: int = Field(default=0, ge=0)
     selected: bool = False
+    # False for on-topic papers a branch's search found but did not read.
+    read: bool = True
+    selection_reason: str | None = None
     foundational_score: float = Field(default=0, ge=0, le=1)
 
 
@@ -94,6 +97,7 @@ class FieldOverview(BaseModel):
 
     text: str
     paper_count: int = Field(ge=0)
+    discovered_paper_count: int = Field(default=0, ge=0)
     cluster_count: int = Field(ge=0)
     edge_count: int = Field(ge=0)
     observed_citation_edge_count: int = Field(ge=0)

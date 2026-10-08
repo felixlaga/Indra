@@ -173,6 +173,10 @@ class ProductRepository(Protocol):
 
     def list_papers(self, session_id: str) -> list[SessionPaperView]: ...
 
+    def list_discovered_papers(self, session_id: str) -> list[SessionPaperView]: ...
+
+    def save_discovered_papers(self, leased: Job, papers: list[Paper], reason: str) -> int: ...
+
     def get_paper(self, paper_id: str) -> Paper: ...
 
     def extract_claims(
@@ -214,6 +218,18 @@ def utc_now() -> datetime:
     """Return a timezone-aware UTC timestamp."""
 
     return datetime.now(timezone.utc)
+
+
+def unread_once(views: list[SessionPaperView], read: set[str]) -> list[SessionPaperView]:
+    """Discovered papers not read anywhere in the session, first discovery kept."""
+
+    seen = set(read)
+    unique = []
+    for view in views:
+        if view.paper_id not in seen:
+            seen.add(view.paper_id)
+            unique.append(view)
+    return unique
 
 
 class InMemoryRepository(
@@ -737,6 +753,16 @@ class InMemoryRepository(
             self._get_session_unlocked(session_id)
             return self._list_papers_unlocked(session_id)
 
+    def list_discovered_papers(self, session_id: str) -> list[SessionPaperView]:
+        """Papers a branch found but did not read, once each, for the research map."""
+
+        with self._lock:
+            self._get_session_unlocked(session_id)
+            read = {view.paper_id for view in self._list_papers_unlocked(session_id)}
+            return unread_once(
+                self._list_papers_unlocked(session_id, selected=False), read
+            )
+
     def get_paper(self, paper_id: str) -> Paper:
         """Get a paper by internal API ID or provider paper ID."""
 
@@ -1212,10 +1238,15 @@ class InMemoryRepository(
                 severity="warning",
             )
 
-    def _list_papers_unlocked(self, session_id: str) -> list[SessionPaperView]:
+    def _list_papers_unlocked(
+        self, session_id: str, *, selected: bool = True
+    ) -> list[SessionPaperView]:
         views: list[SessionPaperView] = []
         for session_paper in self._session_papers.values():
-            if session_paper.session_id != session_id:
+            if (
+                session_paper.session_id != session_id
+                or session_paper.selected != selected
+            ):
                 continue
             paper = self._papers.get(session_paper.paper_id)
             if paper is None:

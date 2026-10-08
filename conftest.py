@@ -1,4 +1,4 @@
-"""Keep the test suite hermetic from a developer's local model credentials."""
+"""Keep the test suite hermetic from a developer's local .env settings."""
 
 import os
 
@@ -11,6 +11,8 @@ MODEL_ENV_VARS = (
     "OPENROUTER_BASE_URL",
     # A configured embedding model would be loaded (and downloaded) by API tests.
     "INDRA_EMBEDDING_MODEL",
+    # A local dashboard port changes which browser origins the API allows.
+    "INDRA_CORS_ORIGINS",
 )
 
 

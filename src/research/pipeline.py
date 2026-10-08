@@ -38,6 +38,7 @@ from .retrieval import (
     candidate_pool,
     clean_queries,
     fallback_queries,
+    landscape,
     needs_plan,
     rank_candidates,
     ranked_choice,
@@ -265,14 +266,29 @@ class ResearchPipeline:
                 else:
                     selection = None
             new = [c.paper for c, _ in chosen]
-            if self.citations is not None and new:
+            # Unread on-topic candidates still belong on the research map.
+            picked = {p.canonical_key for p in new}
+            discovered = [
+                c.paper for c in landscape(ranked) if c.paper.canonical_key not in picked
+            ]
+            if self.citations is not None and (new or discovered):
                 try:
                     async with asyncio.timeout(limits.provider_timeout_seconds):
-                        new = await self.citations(new)
+                        enriched = await self.citations(new + discovered)
+                    new, discovered = enriched[: len(new)], enriched[len(new) :]
                 except Exception as exc:
                     warnings.append(f"citations: {type(exc).__name__}")
-            for paper in new:
-                paper.id = repo.save_research_paper(leased, PaperResult(paper=paper))
+            for paper, (_, reason) in zip(new, chosen):
+                paper.id = repo.save_research_paper(
+                    leased, PaperResult(paper=paper, selection_reason=reason)
+                )
+            repo.save_discovered_papers(
+                leased,
+                discovered,
+                "Found by the branch's search; the model chose other papers to read."
+                if selection
+                else "Found by the branch's search; ranked below the papers read.",
+            )
             repo.record_research_decision(
                 leased,
                 self._selection_decision(

@@ -31,6 +31,8 @@ MAX_QUERY_WORDS = 6
 # enough for a free model's context.
 MAX_CANDIDATES = 30
 ABSTRACT_CHARS = 400
+# Unread candidates kept per branch for the research map.
+MAX_DISCOVERED = 60
 
 QUERY_INSTRUCTION = (
     "Turn this research question into at most 3 short search queries for academic databases such "
@@ -235,6 +237,12 @@ def ranked_choice(ranked: list[Candidate], wanted: int) -> list[Candidate]:
 
     on_topic = [c for c in ranked if c.on_topic]
     return (on_topic or ranked)[:wanted]
+
+
+def landscape(ranked: list[Candidate]) -> list[Candidate]:
+    """On-topic candidates, best first, that the map shows around the papers read."""
+
+    return [c for c in ranked if c.on_topic][:MAX_DISCOVERED]
 
 
 def selection_input(question: str, shown: list[Candidate], wanted: int) -> dict:

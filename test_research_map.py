@@ -136,3 +136,39 @@ def test_empty_session_map_endpoint():
     response = client.get("/sessions/" + session["id"] + "/map")
     assert response.status_code == 200
     assert response.json()["nodes"] == []
+
+
+def test_discovered_papers_join_the_map_without_counting_as_read():
+    read = make_paper("paper-a", "Lensed gravitational waves", 2024, 10, "", "S2-A")
+    found = make_paper(
+        "paper-b",
+        "Wave optics of lensed gravitational waves",
+        2025,
+        3,
+        "",
+        "S2-B",
+        {"references": [{"paperId": "S2-A"}]},
+    )
+    snapshot = SimpleNamespace(
+        session=SimpleNamespace(id="session-1"),
+        papers=[make_entry(read, "branch-root", True)],
+        branches=[SimpleNamespace(id="branch-root", label="Root", query="lensing")],
+        summaries=[],
+        claims=[],
+    )
+    discovered = [
+        SimpleNamespace(
+            paper=found, branch_id="branch-root", selected=False, selection_reason="Found"
+        ),
+        # A discovered copy of a paper that was read elsewhere stays a read node.
+        SimpleNamespace(paper=read, branch_id="branch-other", selected=False),
+    ]
+    result = ResearchMapBuilder().build(snapshot, discovered)
+    nodes = {node.paper_id: node for node in result.nodes}
+    assert nodes["paper-a"].read and not nodes["paper-b"].read
+    assert nodes["paper-b"].selection_reason == "Found"
+    assert [(e.source_paper_id, e.target_paper_id) for e in result.edges if e.observed] == [
+        ("paper-b", "paper-a")
+    ]
+    assert result.overview.paper_count == 1
+    assert result.overview.discovered_paper_count == 1

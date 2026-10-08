@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-from ..research.models import PaperChunk, PaperResult, stable_id
+from ..research.models import READ_REASON, PaperChunk, PaperResult, stable_id
 from .models import (
     AgentDecision,
     Branch,
@@ -69,6 +69,7 @@ class MemoryResearchWrites:
                 for session_id in sorted({link.session_id for link in self._session_papers.values() if link.paper_id == paper.id}):
                     self._create_event_unlocked(session_id, "paper_metadata_updated", {}, paper_id=paper.id)
             link_id = stable_id(leased.session_id, leased.branch_id or "", paper.id)
+            prior = self._session_papers.get(link_id)
             self._session_papers[link_id] = SessionPaper(
                 id=link_id,
                 session_id=leased.session_id,
@@ -76,7 +77,9 @@ class MemoryResearchWrites:
                 paper_id=paper.id,
                 selected=True,
                 discovery_method="query_search",
-                selection_reason="Selected from provider relevance ranking within the session paper limit.",
+                selection_reason=result.selection_reason
+                or (prior.selection_reason if prior else None)
+                or READ_REASON,
                 created_at=utc_now(),
             )
             for chunk in result.chunks:
@@ -169,6 +172,45 @@ class MemoryResearchWrites:
                 return "branch"
             current.result["model_calls"] = mine + 1
             return None
+
+    def save_discovered_papers(self, leased: Job, papers: list, reason: str) -> int:
+        """Link candidates a branch found but did not read, for the research map."""
+
+        from .repository import utc_now
+
+        if not papers:
+            return 0
+        with self._lock:
+            self._research_lease(leased)
+            for found in papers:
+                paper = next(
+                    (p for p in self._papers.values() if p.canonical_key == found.canonical_key),
+                    None,
+                )
+                if paper is None:
+                    paper = found.model_copy(deep=True)
+                    self._papers[paper.id] = paper
+                link_id = stable_id(leased.session_id, leased.branch_id or "", paper.id)
+                self._session_papers.setdefault(
+                    link_id,
+                    SessionPaper(
+                        id=link_id,
+                        session_id=leased.session_id,
+                        branch_id=leased.branch_id,
+                        paper_id=paper.id,
+                        selected=False,
+                        discovery_method="query_search",
+                        selection_reason=reason,
+                        created_at=utc_now(),
+                    ),
+                )
+            self._create_event_unlocked(
+                session_id=leased.session_id,
+                branch_id=leased.branch_id,
+                event_type="papers_found",
+                payload={"count": len(papers)},
+            )
+        return len(papers)
 
     def record_research_decision(self, leased: Job, decision, *, max_branches: int) -> list[Branch]:
         """Store a decision and open its Scout branches with their jobs, once."""

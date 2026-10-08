@@ -266,7 +266,7 @@ class ResearchAdviceBuilder:
                         "paths between papers in this session."
                     ),
                     score=0.4,
-                    paper_ids=[node.paper_id for node in research_map.nodes],
+                    paper_ids=[node.paper_id for node in research_map.nodes if node.read],
                     caveat="This can reflect incomplete provider metadata, not an absence of citations.",
                 )
             )

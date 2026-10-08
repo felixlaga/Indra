@@ -238,6 +238,9 @@ export interface ResearchMapNode {
   citation_count: number;
   influential_citation_count: number;
   selected: boolean;
+  /** False for on-topic papers a branch's search found but did not read. */
+  read?: boolean;
+  selection_reason?: string | null;
   foundational_score: number;
 }
 
@@ -290,6 +293,8 @@ export interface BranchMapSynthesis {
 export interface FieldOverview {
   text: string;
   paper_count: number;
+  /** On-topic papers the searches found but did not read; they are map nodes too. */
+  discovered_paper_count?: number;
   cluster_count: number;
   edge_count: number;
   observed_citation_edge_count: number;

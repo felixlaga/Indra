@@ -79,8 +79,13 @@ def without_nul(value: str | None) -> str | None:
     return value.replace("\x00", "") if value else value
 
 
+READ_REASON = "Chosen from the branch's candidate papers."
+
+
 class PaperResult(BaseModel):
     paper: Paper
+    # Why the branch chose to read this paper, such as the model's selection reason.
+    selection_reason: str | None = None
     chunks: list[PaperChunk] = Field(default_factory=list)
     source_url: str | None = None
     parse_status: Literal["parsed", "unavailable", "failed"] = "unavailable"

@@ -54,11 +54,15 @@ _NORMALIZED_IDENTIFIER_KEYS = {re.sub(r"[^a-z]", "", item) for item in _IDENTIFI
 class ResearchMapBuilder:
     """Build an auditable literature landscape from a session snapshot."""
 
-    def build(self, snapshot: Any) -> ResearchMap:
+    def build(self, snapshot: Any, discovered: Iterable[Any] = ()) -> ResearchMap:
+        """Map the papers read plus, when given, on-topic papers found but not read."""
+
         session_id = str(snapshot.session.id)
-        entries = list(snapshot.papers)
+        read = list(snapshot.papers)
+        read_ids = {str(entry.paper.id) for entry in read}
+        entries = read + [e for e in discovered if str(e.paper.id) not in read_ids]
         branches = {str(branch.id): branch for branch in snapshot.branches}
-        paper_by_id = {str(entry.paper.id): entry for entry in entries}
+        paper_by_id = {str(entry.paper.id): entry for entry in read}
         clusters = self._clusters(entries, branches)
         cluster_by_paper = {
             paper_id: cluster.id
@@ -81,11 +85,13 @@ class ResearchMapBuilder:
                     0, entry.paper.influential_citation_count or 0
                 ),
                 selected=bool(entry.selected),
+                read=str(entry.paper.id) in read_ids,
+                selection_reason=getattr(entry, "selection_reason", None),
             )
             for entry in entries
         ]
         observed_edges = self._observed_edges(entries)
-        recommendations = self._recommendations(entries, observed_edges)
+        recommendations = self._recommendations(read, observed_edges)
         inferred_edges = [
             ResearchMapEdge(
                 id=f"related:{item.source_paper_id}:{item.target_paper_id}",
@@ -417,6 +423,8 @@ class ResearchMapBuilder:
         edges: list[ResearchMapEdge],
         clusters: list[ResearchMapCluster],
     ) -> FieldOverview:
+        found = [node for node in nodes if not node.read]
+        nodes = [node for node in nodes if node.read]
         years = [node.year for node in nodes if node.year is not None]
         foundational = [node for node in nodes if node.role == "foundational_candidate"]
         recent = [node for node in nodes if node.role == "recent"]
@@ -438,6 +446,11 @@ class ResearchMapBuilder:
                 f"relative to the newest retrieved paper. {len(observed_citations)} "
                 "citation/reference paths are supported by persisted provider metadata."
             )
+            if found:
+                text += (
+                    f" The map also shows {len(found)} on-topic papers the searches found "
+                    "but did not read."
+                )
         else:
             text = (
                 "No papers have been persisted for this session, so no research "
@@ -446,6 +459,7 @@ class ResearchMapBuilder:
         return FieldOverview(
             text=text,
             paper_count=len(nodes),
+            discovered_paper_count=len(found),
             cluster_count=len(clusters),
             edge_count=len(edges),
             observed_citation_edge_count=len(observed_citations),

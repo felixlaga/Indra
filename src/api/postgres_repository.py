@@ -44,7 +44,13 @@ from .models import (
     Summary,
 )
 from .accounts_repository import PostgresAccounts
-from .repository import ConflictError, EventSubscription, NotFoundError, utc_now
+from .repository import (
+    ConflictError,
+    EventSubscription,
+    NotFoundError,
+    unread_once,
+    utc_now,
+)
 from .research_loop import ResearchLoopBridge
 from .research_postgres import PostgresResearchWrites
 from .event_repository import PostgresEventReads
@@ -728,6 +734,14 @@ class PostgresRepository(
         self._publish_inserted_events(pending_events)
         return branch
 
+    def list_discovered_papers(self, session_id: str) -> list[SessionPaperView]:
+        """Papers a branch found but did not read, once each, for the research map."""
+
+        with self._connect() as conn:
+            self._get_session(conn, session_id)
+            read = {view.paper_id for view in self._list_papers(conn, session_id)}
+            return unread_once(self._list_papers(conn, session_id, selected=False), read)
+
     def list_papers(self, session_id: str) -> list[SessionPaperView]:
         with self._connect() as conn:
             self._get_session(conn, session_id)
@@ -1398,7 +1412,9 @@ class PostgresRepository(
             raise NotFoundError("Paper not found")
         return str(paper["id"])
 
-    def _list_papers(self, conn: Any, session_id: str) -> list[SessionPaperView]:
+    def _list_papers(
+        self, conn: Any, session_id: str, *, selected: bool = True
+    ) -> list[SessionPaperView]:
         rows = self._fetch_all(
             conn,
             """
@@ -1415,10 +1431,10 @@ class PostgresRepository(
               p.*
             FROM session_papers sp
             JOIN papers p ON p.id = sp.paper_id
-            WHERE sp.session_id = %s
+            WHERE sp.session_id = %s AND sp.selected = %s
             ORDER BY sp.created_at
             """,
-            (session_id,),
+            (session_id, selected),
         )
         return [_session_paper_view_from_row(row) for row in rows]
 

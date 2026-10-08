@@ -511,10 +511,29 @@ async def test_batch_judging_maps_each_passage_and_leaves_omitted_ones_unjudged(
     assert results[2][1]["rationale"].startswith("The model did not judge")
 
 
+async def test_batch_judging_accepts_pdf_line_breaks_and_rejects_invented_quotes():
+    retrieved = _retrieved(
+        "FastMKA achieves a favorable trade-off: com-\nparable perplexity  to MLA.",
+        "The method improves accuracy.",
+    )
+    model = _model(
+        {
+            "judgments": [
+                {"passage": 1, "relation": "supports", "quote": "comparable perplexity to MLA", "rationale": "Same."},
+                {"passage": 2, "relation": "supports", "quote": "invented", "rationale": "Made up."},
+            ]
+        }
+    )
+    (first, _), (second, trace) = await judge_passages("claim", retrieved, model)
+    assert first.relation.value == "supports"
+    assert first.evidence_text == "comparable perplexity to MLA"
+    assert second.relation.value == "mentions"
+    assert "not found in this passage" in trace["rationale"]
+
+
 @pytest.mark.parametrize(
     "judgments",
     [
-        [{"passage": 1, "relation": "supports", "quote": "invented", "rationale": "x"}],
         [{"passage": 4, "relation": "insufficient", "quote": "", "rationale": "x"}],
         [
             {"passage": 1, "relation": "insufficient", "quote": "", "rationale": "x"},
@@ -522,10 +541,29 @@ async def test_batch_judging_maps_each_passage_and_leaves_omitted_ones_unjudged(
         ],
     ],
 )
-async def test_batch_judging_rejects_invented_quotes_and_bad_passage_numbers(judgments):
+async def test_batch_judging_rejects_unknown_or_repeated_passage_numbers(judgments):
     with pytest.raises(ValueError):
         await judge_passages(
             "The method improves accuracy.",
             _retrieved("The method improves accuracy."),
             _model({"judgments": judgments}),
         )
+
+
+class _Paper:
+    def __init__(self, authors, year, title="A paper"):
+        self.authors, self.year, self.title = authors, year, title
+
+
+def test_readable_turns_claim_aliases_into_author_year_citations():
+    from src.research.scouts import readable
+
+    papers = {
+        "p1": _Paper([{"name": "Ashish Vaswani"}, {"name": "Noam Shazeer"}], 2017),
+        "p2": _Paper([{"name": "Ada Lovelace"}], None),
+    }
+    aliases = {"C1": _Claim("c1", "p1"), "C2": _Claim("c2", "p1"), "C3": _Claim("c3", "p2")}
+    text = "Speedups hold (C1, C2) but not in C3; C9 is unknown."
+    assert readable(text, aliases, papers) == (
+        "Speedups hold (Vaswani et al. 2017) but not in Lovelace; C9 is unknown."
+    )

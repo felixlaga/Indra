@@ -1,5 +1,8 @@
 """Evidence judgment separate from retrieval, with explicit abstention."""
 
+import re
+import unicodedata
+
 from ..api.models import ClaimEvidenceCreate
 from ..research.models import EvidenceJudgment, EvidenceJudgments
 
@@ -41,21 +44,26 @@ def _evidence(candidate, relation: str, quote: str) -> ClaimEvidenceCreate:
     )
 
 
+def _match_key(text: str) -> str:
+    """Compare quotes the way a reader would: PDF line breaks and hyphenation do not count."""
+
+    text = unicodedata.normalize("NFKC", text)
+    text = re.sub(r"(\w)-\s+(\w)", r"\1\2", text)
+    return " ".join(text.split())
+
+
 def _checked(judgment, candidate) -> tuple[str, str]:
     """A supporting or contradicting judgment must quote its passage verbatim."""
 
-    if judgment.relation != "insufficient" and (
-        not judgment.quote.strip() or judgment.quote not in candidate.evidence_text
-    ):
+    if judgment.relation == "insufficient":
+        quote = judgment.quote if judgment.quote and judgment.quote in candidate.evidence_text else candidate.evidence_text
+        return judgment.relation, quote
+    key = _match_key(judgment.quote)
+    if not key or key not in _match_key(candidate.evidence_text):
         raise ValueError(
             "Verification quote is not present verbatim in the source passage"
         )
-    quote = (
-        judgment.quote
-        if judgment.quote and judgment.quote in candidate.evidence_text
-        else candidate.evidence_text
-    )
-    return judgment.relation, quote
+    return judgment.relation, " ".join(judgment.quote.split())
 
 
 async def judge_passage(claim_text, retrieved, model):
@@ -114,7 +122,20 @@ async def judge_passages(claim_text, retrieved: list, model):
                 )
             )
             continue
-        relation, quote = _checked(judgment, item.candidate)
+        try:
+            relation, quote = _checked(judgment, item.candidate)
+        except ValueError:
+            # Only this passage's judgment is unusable; it stays for review.
+            results.append(
+                (
+                    _evidence(item.candidate, "mentions", item.candidate.evidence_text),
+                    {
+                        **_unjudged_trace(item),
+                        "rationale": "The model's quote was not found in this passage; it requires review.",
+                    },
+                )
+            )
+            continue
         results.append(
             (
                 _evidence(item.candidate, relation, quote),

@@ -26,8 +26,9 @@ PLAN_INSTRUCTION = (
     "Propose none if the findings already answer the question or the claims are too thin."
 )
 SYNTHESIS_INSTRUCTION = (
-    "Write an overview of what these checked claims establish about the session question, separating "
-    "supported findings from contradicted, unchecked and speculative ones. Then propose at most 5 "
+    "Write an overview, in readable prose for a researcher, of what these checked claims establish about "
+    "the session question, separating supported findings from contradicted, unchecked and speculative "
+    "ones. Describe findings by their content; do not list claim aliases in the overview. Then propose at most 5 "
     "testable hypotheses that connect findings from different papers. Each hypothesis must cite "
     "supporting claims by alias from at least two different papers, cite contradicting claims when "
     "they exist, state what evidence is missing, and give concrete next steps. Do not present a "
@@ -167,11 +168,37 @@ def synthesis_input(session, branches, claims, papers_by_id):
     }
 
 
+def citation(paper) -> str:
+    """Author–year label for a paper, e.g. "Vaswani et al. 2017"."""
+
+    names = [a.get("name") for a in (paper.authors or []) if a.get("name")]
+    if names:
+        lead = names[0].split()[-1] + (" et al." if len(names) > 1 else "")
+    else:
+        lead = paper.title[:40]
+    return f"{lead} {paper.year}" if paper.year else lead
+
+
+def readable(text: str, aliases, papers_by_id) -> str:
+    """Replace claim aliases the model may still cite with author–year citations."""
+
+    def cite(match):
+        claim = aliases.get(match.group(0))
+        paper = papers_by_id.get(claim.paper_id) if claim else None
+        return citation(paper) if paper else match.group(0)
+
+    text = re.sub(r"\bC\d+\b", cite, text)
+    # "(Smith 2020, Smith 2020)" reads as noise once aliases from one paper collapse.
+    return re.sub(r"\b([^,()]+?)(?:, \1)+\b", r"\1", text)
+
+
 def _texts(values, limit=300):
     return [v.strip()[:limit] for v in values if v.strip()]
 
 
-def accept_synthesis(synthesis: SessionSynthesis, *, leased, session, aliases, provenance):
+def accept_synthesis(
+    synthesis: SessionSynthesis, *, leased, session, aliases, provenance, papers_by_id=None
+):
     """Keep only hypotheses whose cited support spans at least two stored papers."""
 
     accepted, dropped = [], []
@@ -190,8 +217,8 @@ def accept_synthesis(synthesis: SessionSynthesis, *, leased, session, aliases, p
         accepted.append(
             HypothesisRecord(
                 id=stable_id(leased.id, "hypothesis", draft.text.strip().lower()),
-                text=draft.text.strip(),
-                rationale=draft.rationale.strip(),
+                text=readable(draft.text.strip(), aliases, papers_by_id or {}),
+                rationale=readable(draft.rationale.strip(), aliases, papers_by_id or {}),
                 testability=TESTABILITY[draft.testability],
                 risk=draft.risk,
                 supporting_claim_ids=[c.id for c in support],

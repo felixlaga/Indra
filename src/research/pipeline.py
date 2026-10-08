@@ -30,6 +30,7 @@ from .scouts import (
     accept_plan,
     accept_synthesis,
     plan_input,
+    readable,
     skipped_plan,
     skipped_synthesis,
     synthesis_input,
@@ -320,12 +321,23 @@ class ResearchPipeline:
             mode = "retrieval_only"
         elif progress.get("model_stop_reason") or for_review:
             mode = "model_partial"
-            reason = progress.get("model_stop_reason")
-            message += (
-                f". {reason}" if reason else ". Some model answers were invalid"
-            ) + f"; {len(for_review)} claims were left for review"
+            message += ". " + (
+                progress.get("model_stop_reason") or "Some model answers were invalid"
+            )
         else:
             mode = "model"
+        if self.model is not None:
+            # Count from stored statuses: unclear evidence also leaves claims open.
+            open_claims = sum(
+                c.summary_id in summary_ids and c.status.value == "needs_review"
+                for c in repo.list_claims(session.id)
+            )
+            if open_claims:
+                message += (
+                    "; 1 claim needs review"
+                    if open_claims == 1
+                    else f"; {open_claims} claims need review"
+                )
         if progress.get("scout_message"):
             message += f". {progress['scout_message']}"
         checkpoint(stage="complete", message=message, verification_mode=mode)
@@ -450,12 +462,13 @@ class ResearchPipeline:
             session=session,
             aliases=aliases,
             provenance=provenance,
+            papers_by_id=papers,
         )
         repo.save_session_synthesis(
             leased,
             SynthesisRecord(
                 summary_id=stable_id(session.id, "session-synthesis"),
-                overview=synthesis.overview,
+                overview=readable(synthesis.overview, aliases, papers),
                 provenance=provenance,
                 hypotheses=hypotheses,
                 decision=decision,

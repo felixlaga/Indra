@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from ..claims import EvidenceCandidate, EvidenceRetriever
-from ..claims.semantic_verifier import judge_passage
+from ..claims.semantic_verifier import judge_passages
 from .model import ResearchModel
 
 
@@ -26,7 +26,8 @@ async def evaluate(model, cases):
             min_score=0,
         )
         try:
-            evidence, _ = await judge_passage(case["claim"], candidates[0], model)
+            # The production path judges every retrieved passage in one batched call.
+            [(evidence, _)] = await judge_passages(case["claim"], candidates[:1], model)
             actual = evidence.relation.value
             error = None
         except Exception as exc:

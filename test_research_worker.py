@@ -467,7 +467,7 @@ async def test_model_budget_also_limits_verification(repo):
     assert result.result["model_calls"] == 1
     assert result.result["verification_mode"] == "model_partial"
     assert "budget of 1 was reached" in result.result["message"]
-    assert "1 claims were left for review" in result.result["message"]
+    assert "1 claim needs review" in result.result["message"]
     assert repo.get_session(session.id).status.value == "completed"
     claim = repo.list_claims(session.id)[0]
     assert claim.status.value == "needs_review"
@@ -498,17 +498,29 @@ class ScriptedModel:
         return schema.model_validate(outcome), {}
 
 
-async def test_invalid_verification_answer_leaves_claim_for_review(repo):
+@pytest.mark.parametrize(
+    "answer,mode",
+    [
+        # An invented quote invalidates only that passage's judgment.
+        (
+            {"judgments": [{"passage": 1, "relation": "supports", "quote": "invented quote", "rationale": "Made up."}]},
+            "model",
+        ),
+        # A malformed answer invalidates the claim's whole check.
+        ({"relation": "supports", "quote": "x", "rationale": "Wrong schema."}, "model_partial"),
+    ],
+)
+async def test_invalid_verification_answer_leaves_claim_for_review(repo, answer, mode):
     session = start(repo)
-    model = ScriptedModel(
-        {"relation": "supports", "quote": "invented quote", "rationale": "Made up."}
-    )
+    model = ScriptedModel(answer)
     result = await ResearchWorker(
         repo, ResearchPipeline(repo, model, search=source, full_text=text)
     ).run_once()
     assert result.status.value == "succeeded"
-    assert result.result["verification_mode"] == "model_partial"
-    assert "Some model answers were invalid" in result.result["message"]
+    assert result.result["verification_mode"] == mode
+    assert "1 claim needs review" in result.result["message"]
+    if mode == "model_partial":
+        assert "Some model answers were invalid" in result.result["message"]
     claim = repo.list_claims(session.id)[0]
     assert claim.status.value == "needs_review"
     evidence = repo.list_claim_evidence(claim.id)

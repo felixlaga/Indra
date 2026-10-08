@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-from ..research.models import READ_REASON, PaperChunk, PaperResult, stable_id
+from ..research.models import READ_REASON, FoundPaper, PaperChunk, PaperResult, stable_id
 from .models import (
     AgentDecision,
     Branch,
@@ -173,22 +173,26 @@ class MemoryResearchWrites:
             current.result["model_calls"] = mine + 1
             return None
 
-    def save_discovered_papers(self, leased: Job, papers: list, reason: str) -> int:
-        """Link candidates a branch found but did not read, for the research map."""
+    def save_discovered_papers(self, leased: Job, found: list[FoundPaper]) -> int:
+        """Link papers the session found but did not read, for the research map."""
 
         from .repository import utc_now
 
-        if not papers:
+        if not found:
             return 0
         with self._lock:
             self._research_lease(leased)
-            for found in papers:
+            for item in found:
                 paper = next(
-                    (p for p in self._papers.values() if p.canonical_key == found.canonical_key),
+                    (
+                        p
+                        for p in self._papers.values()
+                        if p.canonical_key == item.paper.canonical_key
+                    ),
                     None,
                 )
                 if paper is None:
-                    paper = found.model_copy(deep=True)
+                    paper = item.paper.model_copy(deep=True)
                     self._papers[paper.id] = paper
                 link_id = stable_id(leased.session_id, leased.branch_id or "", paper.id)
                 self._session_papers.setdefault(
@@ -199,8 +203,8 @@ class MemoryResearchWrites:
                         branch_id=leased.branch_id,
                         paper_id=paper.id,
                         selected=False,
-                        discovery_method="query_search",
-                        selection_reason=reason,
+                        discovery_method=item.method,
+                        selection_reason=item.reason,
                         created_at=utc_now(),
                     ),
                 )
@@ -208,9 +212,9 @@ class MemoryResearchWrites:
                 session_id=leased.session_id,
                 branch_id=leased.branch_id,
                 event_type="papers_found",
-                payload={"count": len(papers)},
+                payload={"count": len(found)},
             )
-        return len(papers)
+        return len(found)
 
     def record_research_decision(self, leased: Job, decision, *, max_branches: int) -> list[Branch]:
         """Store a decision and open its Scout branches with their jobs, once."""
@@ -361,6 +365,16 @@ class MemoryResearchWrites:
         with self._lock:
             current = self._research_lease(leased)
             now = utc_now()
+            if current.job_type == JobType.NETWORK_EXPANSION:
+                current.status = JobStatus.SUCCEEDED
+                current.locked_at = current.locked_by = None
+                current.completed_at = current.updated_at = now
+                self._create_event_unlocked(
+                    session_id=current.session_id,
+                    event_type="job_completed",
+                    payload={"job_id": current.id, "job_type": current.job_type.value},
+                )
+                return current.model_copy(deep=True)
             if current.branch_id:
                 branch = self._get_branch_unlocked(current.branch_id)
                 if branch.status == BranchStatus.RUNNING:
@@ -374,7 +388,10 @@ class MemoryResearchWrites:
                 payload={"job_id": current.id, "job_type": current.job_type.value},
             )
             jobs = self._list_jobs_unlocked(current.session_id)
-            if not any(j.status in ACTIVE_JOB_STATUSES for j in jobs):
+            if not any(
+                j.status in ACTIVE_JOB_STATUSES and j.job_type != JobType.NETWORK_EXPANSION
+                for j in jobs
+            ):
                 if then_synthesize and not any(
                     j.job_type == JobType.SESSION_SYNTHESIS for j in jobs
                 ):

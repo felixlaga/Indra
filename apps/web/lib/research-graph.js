@@ -60,6 +60,32 @@ const GROUNDING = {
   contradicted: 0,
 };
 const MAX_GAPS = 30;
+// Distinct on the dark canvas; themes beyond the palette reuse it.
+export const THEME_COLORS = [
+  "#6aa9ff",
+  "#4fd1a1",
+  "#f3bb63",
+  "#ff7bb0",
+  "#b57bff",
+  "#5fd0e6",
+  "#ff9f5f",
+  "#a3d65c",
+  "#e6d35f",
+  "#8f9cff",
+  "#ff6f6f",
+  "#62c9a8",
+];
+
+/** Older papers blue, newer amber. @param {number | null | undefined} year @param {number} first @param {number} last */
+export function yearColor(year, first, last) {
+  if (!year) return GRAPH_COLORS.unchecked;
+  const t = last > first ? (year - first) / (last - first) : 1;
+  const [a, b] = [
+    [80, 120, 220],
+    [255, 190, 80],
+  ];
+  return `rgb(${a.map((c, i) => Math.round(c + (b[i] - c) * Math.max(0, Math.min(1, t)))).join(", ")})`;
+}
 
 /** @param {string} text @param {number} [length] */
 export function shorten(text, length = 60) {
@@ -114,15 +140,27 @@ function branchColor(status, root) {
 
 /**
  * @param {{
- *   map: { nodes: any[], edges: any[], clusters?: any[] },
+ *   map: { nodes: any[], edges: any[], clusters?: any[], insight?: { themes?: any[] } | null },
  *   snapshot?: { session?: { initial_query?: string }, branches: any[], claims: any[], claim_evidence?: any[] } | null,
  *   advice?: { hypotheses?: any[], open_problems?: any[], contradictions?: any[] } | null,
  * }} sources
- * @param {{ found?: boolean, ideas?: boolean, contradictions?: boolean, related?: boolean }} [show]
+ * @param {{ found?: boolean, ideas?: boolean, contradictions?: boolean, related?: boolean, colorBy?: "verification" | "theme" | "year" }} [show]
  * @returns {{ nodes: GraphNode[], links: GraphLink[], counts: Record<string, number> }}
  */
 export function buildResearchGraph({ map, snapshot, advice }, show = {}) {
-  const options = { found: true, ideas: true, contradictions: true, related: false, ...show };
+  const options = {
+    found: true,
+    ideas: true,
+    contradictions: true,
+    related: false,
+    colorBy: "verification",
+    ...show,
+  };
+  const themes = map.insight?.themes ?? [];
+  const themeIndex = new Map(themes.map((theme, index) => [theme.id, index]));
+  const themeLabel = new Map(themes.map((theme) => [theme.id, theme.label]));
+  const years = map.nodes.map((node) => node.year).filter(Boolean);
+  const [firstYear, lastYear] = [Math.min(...years), Math.max(...years)];
   /** @type {GraphNode[]} */
   const nodes = [];
   /** @type {GraphLink[]} */
@@ -191,22 +229,32 @@ export function buildResearchGraph({ map, snapshot, advice }, show = {}) {
     if (!read && !options.found) continue;
     const ground = grounding.get(paper.paper_id);
     const checked = ground && ground.checked ? ground.score / ground.checked : null;
+    const theme = themeIndex.get(paper.theme_id);
+    let color = !read
+      ? GRAPH_COLORS.found
+      : checked === null
+        ? GRAPH_COLORS.unchecked
+        : groundingColor(checked);
+    if (options.colorBy === "theme")
+      color = theme === undefined ? GRAPH_COLORS.found : THEME_COLORS[theme % THEME_COLORS.length];
+    if (options.colorBy === "year") color = yearColor(paper.year, firstYear, lastYear);
+    // Cited often within the network: the field's shared foundations stand out.
+    const inNetwork = Math.min(paper.in_network_citations ?? 0, 12);
     addNode({
       id: `paper:${paper.paper_id}`,
       kind: read ? "paper" : "found",
       label: shorten(paper.title, 60),
       title: paper.title,
-      color: !read
-        ? GRAPH_COLORS.found
-        : checked === null
-          ? GRAPH_COLORS.unchecked
-          : groundingColor(checked),
-      val: read ? 3 + 2 * citationWeight(paper.citation_count) : 1 + citationWeight(paper.citation_count),
+      color,
+      val: (read ? 3 + 2 * citationWeight(paper.citation_count) : 1 + citationWeight(paper.citation_count)) + 0.5 * inNetwork,
       refId: paper.paper_id,
       detail: {
         year: paper.year,
         venue: paper.venue,
         citations: paper.citation_count,
+        inNetwork: paper.in_network_citations ?? 0,
+        citesNetwork: paper.cites_in_network ?? 0,
+        theme: themeLabel.get(paper.theme_id),
         role: paper.role,
         reason: paper.selection_reason,
         grounding: checked,

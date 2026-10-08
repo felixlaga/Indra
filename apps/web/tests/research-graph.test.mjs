@@ -127,3 +127,21 @@ test("rule-based advisor proposals are not drawn as hypotheses", () => {
   // Gaps stated by papers still appear.
   assert.deepEqual(pairs(graph, "gap"), ["paper:p2>gap:o1"]);
 });
+
+test("papers can be coloured by citation theme or publication year", async () => {
+  const { THEME_COLORS, yearColor } = await import("../lib/research-graph.js");
+  const themed = {
+    ...map,
+    nodes: map.nodes.map((node, i) => ({ ...node, theme_id: i < 2 ? "theme-1" : null, year: 2000 + i * 10 })),
+    insight: { themes: [{ id: "theme-1", label: "Lensing" }] },
+  };
+  const byTheme = buildResearchGraph({ map: themed, snapshot }, { colorBy: "theme" });
+  const color = (graph, id) => graph.nodes.find((node) => node.id === id).color;
+  assert.equal(color(byTheme, "paper:p1"), THEME_COLORS[0]);
+  assert.equal(color(byTheme, "paper:p3"), GRAPH_COLORS.found);
+  assert.equal(byTheme.nodes.find((node) => node.id === "paper:p1").detail.theme, "Lensing");
+  const byYear = buildResearchGraph({ map: themed, snapshot }, { colorBy: "year" });
+  assert.equal(color(byYear, "paper:p1"), yearColor(2000, 2000, 2020));
+  assert.equal(color(byYear, "paper:p3"), yearColor(2020, 2000, 2020));
+  assert.notEqual(color(byYear, "paper:p1"), color(byYear, "paper:p3"));
+});

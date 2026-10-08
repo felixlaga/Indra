@@ -13,8 +13,8 @@ LEASE_SECONDS = 120
 MAX_ATTEMPTS = 3
 # Bump when map or advisor output changes, so results cached by older code are rebuilt
 # on their next request instead of being served. 2: model hypotheses in advice.
-# 3: discovered (found but unread) papers on the map.
-BUILDER_VERSION = 3
+# 3: discovered (found but unread) papers on the map. 4: field insight and themes.
+BUILDER_VERSION = 4
 
 
 def outdated(row: dict) -> bool:

@@ -172,3 +172,40 @@ def test_discovered_papers_join_the_map_without_counting_as_read():
     ]
     assert result.overview.paper_count == 1
     assert result.overview.discovered_paper_count == 1
+
+
+def test_field_insight_finds_citation_themes_foundations_and_frontier():
+    from src.maps.insight import field_insight
+    from src.maps.models import ResearchMapEdge, ResearchMapNode
+
+    def node(pid, year, citations=0):
+        return ResearchMapNode(
+            paper_id=pid, title=pid, year=year, cluster_id="c", role="established",
+            citation_count=citations,
+        )
+
+    def cites(source, target):
+        return ResearchMapEdge(
+            id=f"cites:{source}:{target}", source_paper_id=source, target_paper_id=target,
+            edge_type="cites", observed=True, provenance="test",
+        )
+
+    nodes = [node("a1", 2010, 500), node("a2", 2024), node("a3", 2025), node("a4", 2026)]
+    nodes += [node("b1", 2005, 90), node("b2", 2008), node("b3", 2012), node("lone", 2026)]
+    edges = [cites(x, "a1") for x in ("a2", "a3", "a4")] + [cites("a4", "a3")]
+    edges += [cites("b2", "b1"), cites("b3", "b1"), cites("b3", "b2")]
+    texts = {n: "wave optics microlensing" for n in ("a1", "a2", "a3", "a4")}
+    texts |= {n: "hubble constant sirens" for n in ("b1", "b2", "b3")}
+
+    insight = field_insight(nodes, edges, texts)
+    lensing, sirens = insight.themes
+    assert sorted(lensing.paper_ids) == ["a1", "a2", "a3", "a4"] and lensing.emerging
+    assert sorted(sirens.paper_ids) == ["b1", "b2", "b3"] and not sirens.emerging
+    assert "microlensing" in lensing.keywords and "hubble" in sirens.keywords
+    assert lensing.key_paper_id == "a1"
+    assert insight.foundation_ids == ["a1", "b1"]
+    assert insight.frontier_ids == ["a4", "a3"]
+    by_id = {n.paper_id: n for n in nodes}
+    assert by_id["a1"].in_network_citations == 3 and by_id["a4"].cites_in_network == 2
+    assert by_id["lone"].theme_id is None
+    assert "cited by 3 papers here" in insight.summary

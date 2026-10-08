@@ -161,8 +161,8 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
     setDerivedBusy(true);
     const requests: Promise<unknown>[] = [];
     if (view === "graph") {
+      // The previous map stays on screen until the refreshed one arrives.
       setMapError(null);
-      setMap(null);
       requests.push(
         indraApi
           .getResearchMap(sessionId, controller.signal)
@@ -182,7 +182,6 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
     // The graph draws the advisor's hypotheses, gaps and contradictions too.
     if (view === "claims" || view === "graph" || type === "hypothesis") {
       setAdviceError(null);
-      setAdvice(null);
       requests.push(
         indraApi
           .getResearchAdvice(sessionId, controller.signal)
@@ -519,6 +518,17 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
                           snapshot={snapshot}
                           advice={advice}
                           onInspect={select}
+                          expansion={{
+                            job:
+                              snapshot.jobs
+                                .filter((job) => job.job_type === "network_expansion")
+                                .sort((a, b) => a.created_at.localeCompare(b.created_at))
+                                .at(-1) ?? null,
+                            onExpand: async (papers) => {
+                              await indraApi.expandNetwork(sessionId, papers);
+                              await load();
+                            },
+                          }}
                         />
                       )}
                     </>

@@ -7,6 +7,7 @@ import type { ResearchAdvice } from "@/lib/advice-types";
 import { GRAPH_COLORS, buildResearchGraph, groundingColor } from "@/lib/research-graph.js";
 import type { ResearchMap, SessionSnapshot } from "@/lib/types";
 
+import { ExpandControl, FieldInsightPanel, type Expansion } from "./panels";
 import { KIND_LABELS, type CanvasProps, type GNode } from "./shared";
 
 // The canvases touch window and WebGL, so they load in the browser only.
@@ -15,6 +16,7 @@ const Canvas3D = dynamic<CanvasProps>(() => import("./canvas-3d"), { ssr: false,
 const Canvas2D = dynamic<CanvasProps>(() => import("./canvas-2d"), { ssr: false, loading });
 
 type Mode = "3d" | "2d";
+type ColorBy = "verification" | "theme" | "year";
 type Inspectable = "branch" | "paper" | "hypothesis";
 const MODE_KEY = "indra.graph.mode";
 
@@ -59,6 +61,8 @@ function NodeDetail({
     d.year && `${d.year}`,
     d.venue && `${d.venue}`,
     typeof d.citations === "number" && `${d.citations} citations`,
+    typeof d.inNetwork === "number" && d.inNetwork > 0 && `cited by ${d.inNetwork} papers here`,
+    typeof d.citesNetwork === "number" && d.citesNetwork > 0 && `cites ${d.citesNetwork} papers here`,
     node.kind === "paper" &&
       (d.checkedClaims
         ? `${d.checkedClaims} of ${d.claims} claims verified, ${Math.round(Number(d.grounding) * 100)}% held up`
@@ -77,6 +81,7 @@ function NodeDetail({
       </header>
       <p className="rg-detail-title">{node.title}</p>
       {!!facts.length && <p className="rg-detail-facts">{facts.join(" · ")}</p>}
+      {typeof d.theme === "string" && <p>Theme: {d.theme}</p>}
       {typeof d.gapKind === "string" && <p>{d.gapKind}</p>}
       {typeof d.hypothesis === "string" && <p>For: {d.hypothesis}</p>}
       {typeof d.reason === "string" && <p>{d.reason}</p>}
@@ -105,15 +110,19 @@ export function ResearchGraph({
   snapshot,
   advice,
   onInspect,
+  expansion,
 }: {
   map: ResearchMap;
   snapshot?: SessionSnapshot | null;
   advice?: ResearchAdvice | null;
   onInspect?: (kind: Inspectable, id: string) => void;
+  expansion?: Expansion;
 }) {
   const [mode, setMode] = useState<Mode>("3d");
   const [show, setShow] = useState({ found: true, ideas: true, contradictions: true, related: false });
+  const [colorBy, setColorBy] = useState<ColorBy>("verification");
   const [selected, setSelected] = useState<GNode | null>(null);
+  const previous = useRef<GNode[]>([]);
   const [containerRef, width] = useWidth();
   const height = width < 640 ? 480 : 640;
 
@@ -134,12 +143,24 @@ export function ResearchGraph({
     }
   }
 
-  // Rebuilt when the view changes too: the force engines write positions into these objects.
-  const graph = useMemo(
-    () => buildResearchGraph({ map, snapshot, advice }, show),
+  // Rebuilt when the view changes too: the force engines write positions into these
+  // objects. Nodes keep their last position, so refreshes and expansions don't
+  // scramble the layout.
+  const graph = useMemo(() => {
+    const placed = new Map(previous.current.map((node) => [node.id, node]));
+    const built = buildResearchGraph({ map, snapshot, advice }, { ...show, colorBy });
+    for (const node of built.nodes as GNode[]) {
+      const last = placed.get(node.id);
+      if (last?.x !== undefined) Object.assign(node, { x: last.x, y: last.y, z: last.z });
+    }
+    previous.current = built.nodes as GNode[];
+    return built;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [map, snapshot, advice, show, mode],
-  );
+  }, [map, snapshot, advice, show, colorBy, mode]);
+  function pick(paperId: string) {
+    const node = (graph.nodes as GNode[]).find((item) => item.refId === paperId && (item.kind === "paper" || item.kind === "found"));
+    if (node) setSelected(node);
+  }
   const { counts } = graph;
   const read = counts.paper ?? 0;
   const found = map.nodes.filter((node) => node.read === false).length;
@@ -158,6 +179,7 @@ export function ResearchGraph({
 
   return (
     <div className="rg">
+      {expansion && <ExpandControl expansion={expansion} />}
       <div className="rg-controls">
         <div className="rg-mode" role="group" aria-label="Graph view">
           {(["3d", "2d"] as Mode[]).map((value) => (
@@ -171,6 +193,14 @@ export function ResearchGraph({
             </button>
           ))}
         </div>
+        <label>
+          Colour by{" "}
+          <select value={colorBy} onChange={(event) => setColorBy(event.target.value as ColorBy)}>
+            <option value="verification">claim verification</option>
+            <option value="theme">citation theme</option>
+            <option value="year">publication year</option>
+          </select>
+        </label>
         {toggles.map(([key, label]) => (
           <label key={key}>
             <input
@@ -232,8 +262,16 @@ export function ResearchGraph({
             {item.label}
           </li>
         ))}
-        <li>Moving dots follow citations, Scout splits and hypothesis support.</li>
+        <li>
+          {colorBy === "theme"
+            ? "Colours show citation themes."
+            : colorBy === "year"
+              ? "Colours run from older (blue) to newer (amber)."
+              : "Moving dots follow citations, Scout splits and hypothesis support."}{" "}
+          Bigger papers are cited more, especially within this network.
+        </li>
       </ul>
+      <FieldInsightPanel map={map} onPick={pick} onColorByTheme={() => setColorBy("theme")} />
     </div>
   );
 }

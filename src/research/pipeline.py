@@ -7,6 +7,7 @@ writes an overview and cross-paper hypotheses.
 
 import asyncio
 import logging
+from collections import Counter
 
 import httpx
 
@@ -19,6 +20,7 @@ from .model import ModelRateLimited, ModelUnavailable
 from .models import (
     ClaimDraft,
     DecisionRecord,
+    FoundPaper,
     PaperResult,
     PaperSelection,
     PaperSynthesis,
@@ -29,6 +31,8 @@ from .models import (
     SynthesisRecord,
     stable_id,
 )
+from .expansion import MAX_EXPANSION, choose_leads, gather_leads, merge_leads
+from .openalex import OpenAlexClient
 from .providers import search_provider
 from .retrieval import (
     MAX_CANDIDATES,
@@ -128,10 +132,13 @@ class ResearchPipeline:
         full_text=fetch_full_text,
         embedder=None,
         citations=None,
+        expansion_client=None,
     ):
         self.repository, self.model = repository, model
         self.search, self.full_text = search, full_text
         self.embedder, self.citations = embedder, citations
+        # An OpenAlex client factory; tests pass a fake.
+        self.expansion_client = expansion_client or OpenAlexClient
 
     async def _embed(self, chunks, checkpoint):
         """Attach passage embeddings; a failing embedder only disables semantic retrieval."""
@@ -157,6 +164,9 @@ class ResearchPipeline:
         limits = ResearchLimits.model_validate(session.parameters.get("research", {}))
         if leased.job_type == JobType.SESSION_SYNTHESIS:
             await self._synthesize(leased, session, limits)
+            return False
+        if leased.job_type == JobType.NETWORK_EXPANSION:
+            await self._expand(leased, session, limits)
             return False
         await self._research_branch(leased, session, limits)
         return self.model is not None and limits.synthesize
@@ -282,12 +292,13 @@ class ResearchPipeline:
                 paper.id = repo.save_research_paper(
                     leased, PaperResult(paper=paper, selection_reason=reason)
                 )
-            repo.save_discovered_papers(
-                leased,
-                discovered,
+            reason = (
                 "Found by the branch's search; the model chose other papers to read."
                 if selection
-                else "Found by the branch's search; ranked below the papers read.",
+                else "Found by the branch's search; ranked below the papers read."
+            )
+            repo.save_discovered_papers(
+                leased, [FoundPaper(paper=p, reason=reason) for p in discovered]
             )
             repo.record_research_decision(
                 leased,
@@ -521,6 +532,77 @@ class ResearchPipeline:
             ][:10],
             details=details,
             provenance=selection[1] if by_model else {"provider": "local", "model": "ranking"},
+        )
+
+    async def _expand(self, leased, session, limits):
+        """Add papers one citation step from the session's network, plus deeper search hits."""
+
+        repo = self.repository
+        want = min(MAX_EXPANSION, int(leased.payload.get("papers", 100)))
+
+        def progress(message, **values):
+            repo.heartbeat_research(leased, {"stage": "expand", "message": message, **values})
+
+        read = [p.paper for p in repo.list_papers(session.id)]
+        found = [p.paper for p in repo.list_discovered_papers(session.id)]
+        seeds = read + found
+        root = next(
+            (j for j in repo.list_jobs(session.id) if j.job_type == JobType.RESEARCH_SESSION),
+            None,
+        )
+        queries = (root.result.get("search_queries") if root else None) or fallback_queries(
+            session.initial_query
+        )
+        topic = (root.result.get("search_topic") if root else None) or queries[0]
+        progress(f"Following citations from {len(seeds)} papers")
+        async with asyncio.timeout(limits.provider_timeout_seconds * 3):
+            async with self.expansion_client() as client:
+                leads = await gather_leads(
+                    client, seeds, queries, want=want, filters=session.filters
+                )
+        leads = merge_leads(
+            leads,
+            known_keys={p.canonical_key for p in seeds},
+            known_titles={title_key(p.title) for p in seeds},
+        )
+        progress(f"Ranking {len(leads)} connected papers")
+        chosen = await choose_leads(
+            leads, question=session.initial_query, topic=topic, want=want, embedder=self.embedder
+        )
+        added = repo.save_discovered_papers(
+            leased,
+            [FoundPaper(paper=c.paper, reason=c.reason(), method=c.method) for c in chosen],
+        )
+        counts = Counter(c.method for c in chosen)
+        summary = (
+            f"Added {added} papers: {counts['reference']} cited by the session's papers, "
+            f"{counts['citation']} citing them and {counts['query_search']} from deeper searches"
+        )
+        repo.record_research_decision(
+            leased,
+            DecisionRecord(
+                id=stable_id(leased.id, "expansion"),
+                decision_type="paper_selection",
+                decision=summary,
+                rationale=(
+                    f"Chose the {added} best-connected papers relevant to the question from "
+                    f"{len(leads)} one citation step away or found by searching deeper."
+                ),
+                input_summary=f"Expanded from {len(read)} papers read and {len(found)} found",
+                details={
+                    "expansion": True,
+                    "requested": want,
+                    "added": added,
+                    "candidates": len(leads),
+                    "methods": dict(counts),
+                    "queries": queries,
+                },
+                provenance={"provider": "openalex", "model": "citation_expansion"},
+            ),
+            max_branches=limits.max_branches,
+        )
+        repo.heartbeat_research(
+            leased, {"stage": "complete", "message": summary, "added": added}
         )
 
     async def _plan(self, leased, session, branch, limits, planner, checkpoint):

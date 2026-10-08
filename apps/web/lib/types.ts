@@ -242,6 +242,10 @@ export interface ResearchMapNode {
   read?: boolean;
   selection_reason?: string | null;
   foundational_score: number;
+  theme_id?: string | null;
+  /** Citations from, and to, other papers in this session's network. */
+  in_network_citations?: number;
+  cites_in_network?: number;
 }
 
 export interface ResearchMapEdge {
@@ -315,6 +319,28 @@ export interface ResearchMap {
   recommendations: RelatedPaperRecommendation[];
   branch_syntheses: BranchMapSynthesis[];
   overview: FieldOverview;
+  insight?: FieldInsight | null;
+}
+
+export interface ResearchTheme {
+  id: string;
+  label: string;
+  keywords: string[];
+  paper_ids: string[];
+  read_count: number;
+  earliest_year?: number | null;
+  latest_year?: number | null;
+  median_year?: number | null;
+  recent_share: number;
+  emerging: boolean;
+  key_paper_id?: string | null;
+}
+
+export interface FieldInsight {
+  summary: string;
+  themes: ResearchTheme[];
+  foundation_ids: string[];
+  frontier_ids: string[];
 }
 
 export interface ProjectMetrics {

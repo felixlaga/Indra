@@ -13,6 +13,7 @@ import type {
   SessionCreate,
   SessionSnapshot,
   EventRecord,
+  Job,
   AuthStatus,
 } from "@/lib/types";
 
@@ -121,6 +122,11 @@ export const indraApi = {
     request<ResearchMap>(`/sessions/${sessionId}/map`, { signal }, 60),
   getResearchAdvice: (sessionId: string, signal?: AbortSignal) =>
     request<ResearchAdvice>(`/sessions/${sessionId}/analysis`, { signal }, 60),
+  expandNetwork: (sessionId: string, papers: number) =>
+    request<Job>(`/sessions/${sessionId}/expand`, {
+      method: "POST",
+      body: JSON.stringify({ papers }),
+    }),
   retryResearchViews: (sessionId: string) =>
     request<{status: string}>(`/sessions/${sessionId}/views/retry`, { method: "POST" }),
   getOlderEvents: (sessionId: string, before: number) =>

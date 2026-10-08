@@ -1,9 +1,11 @@
 """Transactional, fenced research writes for Postgres."""
 
-from ..research.models import READ_REASON, PaperChunk, PaperResult, stable_id
+from ..research.models import READ_REASON, FoundPaper, PaperChunk, PaperResult, stable_id
 from .models import Branch, Job, JobType
 
 ACTIVE_JOBS = "status IN ('queued','running','paused')"
+# Research jobs decide when a session finishes; network expansion runs beside them.
+ACTIVE_RESEARCH_JOBS = ACTIVE_JOBS + " AND job_type <> 'network_expansion'"
 
 
 def _embedding_param(embedding, vector_column: bool):
@@ -243,26 +245,27 @@ class PostgresResearchWrites:
             )
         return paper_id
 
-    def save_discovered_papers(self, leased: Job, papers: list, reason: str) -> int:
-        """Link candidates a branch found but did not read, for the research map."""
+    def save_discovered_papers(self, leased: Job, found: list[FoundPaper]) -> int:
+        """Link papers the session found but did not read, for the research map."""
 
-        if not papers:
+        if not found:
             return 0
         events = []
         with self._connect() as conn:
             self._research_lease(conn, leased)
-            for paper in papers:
-                paper_id = self._upsert_paper(conn, paper)
+            for item in found:
+                paper_id = self._upsert_paper(conn, item.paper)
                 self._execute(
                     conn,
                     """INSERT INTO session_papers(id,session_id,branch_id,paper_id,selected,discovery_method,selection_reason)
-                    VALUES (%s,%s,%s,%s,false,'query_search',%s) ON CONFLICT(id) DO NOTHING""",
+                    VALUES (%s,%s,%s,%s,false,%s,%s) ON CONFLICT(id) DO NOTHING""",
                     (
                         stable_id(leased.session_id, leased.branch_id or "", paper_id),
                         leased.session_id,
                         leased.branch_id,
                         paper_id,
-                        reason,
+                        item.method,
+                        item.reason,
                     ),
                 )
             events.append(
@@ -271,11 +274,11 @@ class PostgresResearchWrites:
                     session_id=leased.session_id,
                     branch_id=leased.branch_id,
                     event_type="papers_found",
-                    payload={"count": len(papers)},
+                    payload={"count": len(found)},
                 )
             )
         self._publish_inserted_events(events)
-        return len(papers)
+        return len(found)
 
     def _embedding_column_is_vector(self, conn) -> bool:
         """pgvector databases store vector; vector-free ones a float array."""
@@ -578,6 +581,23 @@ class PostgresResearchWrites:
         events = []
         with self._connect() as conn:
             self._research_lease(conn, leased)
+            if leased.job_type == JobType.NETWORK_EXPANSION:
+                row = self._fetch_one(
+                    conn,
+                    """UPDATE jobs SET status='succeeded',locked_by=NULL,locked_at=NULL,completed_at=now()
+                    WHERE id=%s RETURNING *""",
+                    (leased.id,),
+                )
+                events.append(
+                    self._insert_event(
+                        conn,
+                        session_id=leased.session_id,
+                        event_type="job_completed",
+                        payload={"job_id": leased.id, "job_type": leased.job_type.value},
+                    )
+                )
+                self._publish_inserted_events(events)
+                return _job_from_row(row)
             self._execute(
                 conn,
                 "UPDATE branches SET status='completed' WHERE id=%s AND status='running'",
@@ -599,7 +619,7 @@ class PostgresResearchWrites:
             )
             active = self._fetch_optional(
                 conn,
-                f"SELECT id FROM jobs WHERE session_id=%s AND {ACTIVE_JOBS} LIMIT 1",
+                f"SELECT id FROM jobs WHERE session_id=%s AND {ACTIVE_RESEARCH_JOBS} LIMIT 1",
                 (leased.session_id,),
             )
             synthesis = self._fetch_optional(

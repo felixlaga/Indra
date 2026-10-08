@@ -82,6 +82,14 @@ def without_nul(value: str | None) -> str | None:
 READ_REASON = "Chosen from the branch's candidate papers."
 
 
+class FoundPaper(BaseModel):
+    """A paper the session found but did not read, and why it is on the map."""
+
+    paper: Paper
+    reason: str
+    method: Literal["query_search", "citation", "reference"] = "query_search"
+
+
 class PaperResult(BaseModel):
     paper: Paper
     # Why the branch chose to read this paper, such as the model's selection reason.

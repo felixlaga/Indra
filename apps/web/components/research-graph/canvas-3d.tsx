@@ -34,13 +34,18 @@ function decoration(node: GNode): THREE.Object3D | null {
 export default function Canvas3D({ data, width, height, onSelect }: CanvasProps) {
   const ref = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
   const fitted = useRef(false);
+  const shown = useRef(0);
 
   useEffect(() => {
     const graph = ref.current;
     if (!graph) return;
     graph.d3Force("charge")?.strength?.(-90);
     graph.d3Force("link")?.distance?.((l: GLink) => linkStyle(l.kind).distance);
-    fitted.current = false;
+    // Re-fit the view when papers are added, not when the same graph refreshes.
+    if (data.nodes.length !== shown.current) {
+      shown.current = data.nodes.length;
+      fitted.current = false;
+    }
     graph.d3ReheatSimulation();
   }, [data]);
 

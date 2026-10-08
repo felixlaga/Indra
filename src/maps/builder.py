@@ -15,6 +15,7 @@ import re
 from statistics import median
 from typing import Any, Iterable
 
+from .insight import field_insight
 from .models import (
     BranchMapSynthesis,
     FieldOverview,
@@ -108,6 +109,14 @@ class ResearchMapBuilder:
             )
         ]
         edges = observed_edges + inferred_edges
+        insight = field_insight(
+            nodes,
+            edges,
+            {
+                str(e.paper.id): f"{e.paper.title} {(e.paper.abstract or '')[:400]}"
+                for e in entries
+            },
+        )
         timeline = self._timeline(nodes)
         syntheses = self._branch_syntheses(snapshot, branches, paper_by_id)
         overview = self._overview(snapshot, nodes, edges, clusters)
@@ -120,6 +129,7 @@ class ResearchMapBuilder:
             recommendations=recommendations,
             branch_syntheses=syntheses,
             overview=overview,
+            insight=insight,
         )
 
     def _roles(self, entries: list[Any]) -> dict[str, tuple[str, float]]:

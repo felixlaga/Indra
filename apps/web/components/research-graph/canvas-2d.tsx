@@ -14,6 +14,7 @@ function labelVisible(node: GNode, scale: number): boolean {
 export default function Canvas2D({ data, width, height, selectedId, onSelect }: CanvasProps) {
   const ref = useRef<ForceGraphMethods<GNode, GLink> | undefined>(undefined);
   const fitted = useRef(false);
+  const shown = useRef(0);
 
   useEffect(() => {
     const graph = ref.current;
@@ -21,7 +22,11 @@ export default function Canvas2D({ data, width, height, selectedId, onSelect }: 
     graph.d3Force("charge")?.strength?.(-70);
     const link = graph.d3Force("link");
     link?.distance?.((l: GLink) => linkStyle(l.kind).distance);
-    fitted.current = false;
+    // Re-fit the view when papers are added, not when the same graph refreshes.
+    if (data.nodes.length !== shown.current) {
+      shown.current = data.nodes.length;
+      fitted.current = false;
+    }
     graph.d3ReheatSimulation();
   }, [data]);
 

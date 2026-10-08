@@ -39,6 +39,10 @@ class ResearchMapNode(BaseModel):
     read: bool = True
     selection_reason: str | None = None
     foundational_score: float = Field(default=0, ge=0, le=1)
+    theme_id: str | None = None
+    # Citations from, and to, other papers in this session's network.
+    in_network_citations: int = Field(default=0, ge=0)
+    cites_in_network: int = Field(default=0, ge=0)
 
 
 class ResearchMapEdge(BaseModel):
@@ -109,6 +113,31 @@ class FieldOverview(BaseModel):
     caveats: list[str] = Field(default_factory=list)
 
 
+class ResearchTheme(BaseModel):
+    """Papers that cite each other, named by the words that set them apart."""
+
+    id: str
+    label: str
+    keywords: list[str] = Field(default_factory=list)
+    paper_ids: list[str] = Field(default_factory=list)
+    read_count: int = Field(default=0, ge=0)
+    earliest_year: int | None = None
+    latest_year: int | None = None
+    median_year: int | None = None
+    recent_share: float = Field(default=0, ge=0, le=1)
+    emerging: bool = False
+    key_paper_id: str | None = None
+
+
+class FieldInsight(BaseModel):
+    """Structure of the retrieved network: themes, foundations, frontier."""
+
+    summary: str
+    themes: list[ResearchTheme] = Field(default_factory=list)
+    foundation_ids: list[str] = Field(default_factory=list)
+    frontier_ids: list[str] = Field(default_factory=list)
+
+
 class ResearchMap(BaseModel):
     """Complete Phase 6 read model for one research session."""
 
@@ -120,3 +149,4 @@ class ResearchMap(BaseModel):
     recommendations: list[RelatedPaperRecommendation] = Field(default_factory=list)
     branch_syntheses: list[BranchMapSynthesis] = Field(default_factory=list)
     overview: FieldOverview
+    insight: FieldInsight | None = None

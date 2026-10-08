@@ -395,6 +395,12 @@ class JobCreate(BaseModel):
     run_at: datetime | None = None
 
 
+class NetworkExpansionRequest(BaseModel):
+    """How many papers to add to a session's network by following citations."""
+
+    papers: int = Field(default=100, ge=10, le=200)
+
+
 class Job(JobCreate):
     """Durable background job state exposed to API and workers."""
 

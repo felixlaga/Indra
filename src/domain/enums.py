@@ -114,6 +114,8 @@ class JobType(StrEnum):
     RESEARCH_SESSION = "research_session"
     BRANCH_CONTINUE = "branch_continue"
     SESSION_SYNTHESIS = "session_synthesis"
+    # Grows a session's paper network by citations; outside the research lifecycle.
+    NETWORK_EXPANSION = "network_expansion"
     CLAIM_EXTRACTION = "claim_extraction"
     CLAIM_VALIDATION = "claim_validation"
     EXPORT = "export"

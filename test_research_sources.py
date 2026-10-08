@@ -280,3 +280,28 @@ async def test_preprint_and_journal_versions_with_one_title_are_read_once(repo):
     await ResearchWorker(repo, ResearchPipeline(repo, search=search, full_text=fixture_text)).run_once()
     titles = sorted(p.paper.title for p in reader(repo).get_session_snapshot(session.id).papers)
     assert titles == ["Longer Attention Span: Sparse Graphs!", "Paper arxiv-other", "Paper openalex-other"]
+
+
+def test_semantic_cutoff_admits_paraphrase_scores_and_rejects_unrelated_ones():
+    from src.claims.evidence_retrieval import MIN_SEMANTIC_SCORE
+
+    claim = "Sparse attention reduces memory usage for long sequences."
+
+    def candidate(text, similarity):
+        # A unit vector whose cosine with the claim's (1, 0) is `similarity`.
+        return EvidenceCandidate(
+            source_type="paper_chunk",
+            paper_id="p",
+            evidence_text=text,
+            embedding=(similarity, (1 - similarity**2) ** 0.5),
+        )
+
+    found = EvidenceRetriever().retrieve(
+        claim,
+        [candidate("Peak GPU footprint grows linearly with context.", 0.48),
+         candidate("We fine-tune on CIFAR-10.", 0.20)],
+        top_k=5,
+        claim_embedding=(1.0, 0.0),
+    )
+    assert [r.candidate.evidence_text for r in found] == ["Peak GPU footprint grows linearly with context."]
+    assert 0.2 < MIN_SEMANTIC_SCORE < 0.48

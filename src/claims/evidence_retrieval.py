@@ -86,7 +86,9 @@ class RetrievedEvidence:
 
 # Cosine similarity a passage needs to qualify on meaning alone, for unit-length
 # sentence embeddings. It only nominates passages; the verifier still judges them.
-MIN_SEMANTIC_SCORE = 0.5
+# With all-MiniLM-L6-v2, relevant scientific paraphrases score about 0.45-0.55 and
+# unrelated passages from the same field 0.2 or less.
+MIN_SEMANTIC_SCORE = 0.35
 _RRF_K = 60
 
 

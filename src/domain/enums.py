@@ -113,6 +113,7 @@ class PaperDiscoveryMethod(StrEnum):
 class JobType(StrEnum):
     RESEARCH_SESSION = "research_session"
     BRANCH_CONTINUE = "branch_continue"
+    SESSION_SYNTHESIS = "session_synthesis"
     CLAIM_EXTRACTION = "claim_extraction"
     CLAIM_VALIDATION = "claim_validation"
     EXPORT = "export"

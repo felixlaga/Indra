@@ -120,13 +120,17 @@ function HypothesisCard({
   return (
     <article className={styles.card}>
       <div className={styles.cardTop}>
-        <h3>Speculative proposal</h3>
+        <h3>
+          {item.source === "model"
+            ? "Cross-paper hypothesis"
+            : "Speculative proposal"}
+        </h3>
         <StatusBadge status={item.status} compact />
       </div>
       <p className={styles.action}>{item.text}</p>
       <p>{item.rationale}</p>
       <div className={styles.hypothesisMetrics}>
-        <span>Confidence {Math.round(item.confidence * 100)}%</span>
+        <span>Confidence signal {Math.round(item.confidence * 100)}%</span>
         <span>Testability {Math.round(item.testability * 100)}%</span>
         <span>Risk {item.risk}</span>
       </div>

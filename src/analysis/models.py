@@ -79,8 +79,11 @@ class HypothesisProposal(BaseModel):
     confidence: float = Field(ge=0, le=1)
     testability: float = Field(ge=0, le=1)
     risk: Literal["low", "medium", "high", "unknown"] = "unknown"
-    source_open_problem_id: str
+    # "model": a cross-paper proposal from session synthesis; "heuristic": an open-problem rule.
+    source: Literal["heuristic", "model"] = "heuristic"
+    source_open_problem_id: str | None = None
     supporting_claim_ids: list[str] = Field(default_factory=list)
+    contradicting_claim_ids: list[str] = Field(default_factory=list)
     supporting_paper_ids: list[str] = Field(default_factory=list)
     missing_evidence: list[str] = Field(default_factory=list)
     next_steps: list[str] = Field(default_factory=list)

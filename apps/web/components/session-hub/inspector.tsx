@@ -90,6 +90,9 @@ export function HubInspector(props: Props) {
   const paper = snapshot.papers.find((entry) => entry.paper_id === id)?.paper;
   const branch = snapshot.branches.find((item) => item.id === id);
   const hypothesis = advice?.hypotheses.find((item) => item.id === id);
+  const scoutDecision = snapshot.decisions?.find(
+    (item) => item.decision_type === "branch_split" && item.branch_id === id,
+  );
   const missing =
     (type === "paper" && !paper) ||
     (type === "branch" && !branch) ||
@@ -170,6 +173,19 @@ export function HubInspector(props: Props) {
             >
               Inspect parent branch
             </button>
+          )}
+          {scoutDecision && (
+            <>
+              <h3>Scout decision</h3>
+              <p>
+                {scoutDecision.decision} {scoutDecision.rationale}
+              </p>
+              {scoutDecision.alternatives.map((item, index) => (
+                <p key={index} className="hub-note">
+                  Not opened: {item.query} — {item.reason}
+                </p>
+              ))}
+            </>
           )}
           {(branch.failure_reason || branch.prune_reason) && (
             <p className="hub-warning">
@@ -428,6 +444,9 @@ export function HubInspector(props: Props) {
           <h2>{hypothesis.text}</h2>
           <StatusBadge status="speculative" />
           <p>
+            {hypothesis.source === "model"
+              ? "Proposed by session synthesis from claims in several papers. "
+              : "Derived from an open-problem signal. "}
             Research proposal, not an established result. Scores are advisor
             heuristics, not calibrated probabilities.
           </p>
@@ -480,6 +499,21 @@ export function HubInspector(props: Props) {
                 ?.paper.title || "Inspect paper"}
             </button>
           ))}
+          {!!hypothesis.contradicting_claim_ids?.length && (
+            <>
+              <h3>Contradicting claims</h3>
+              {hypothesis.contradicting_claim_ids.map((claimId) => (
+                <button
+                  key={claimId}
+                  className="hub-list-button"
+                  onClick={() => select("claim", claimId)}
+                >
+                  {snapshot.claims.find((claim) => claim.id === claimId)
+                    ?.claim_text || "Inspect claim"}
+                </button>
+              ))}
+            </>
+          )}
         </>
       )}
     </div>

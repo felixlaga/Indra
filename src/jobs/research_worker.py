@@ -26,7 +26,12 @@ class ResearchWorker:
 
     async def run_once(self):
         leased = self.repository.lease_next_job(
-            self.worker_id, [JobType.RESEARCH_SESSION, JobType.BRANCH_CONTINUE]
+            self.worker_id,
+            [
+                JobType.RESEARCH_SESSION,
+                JobType.BRANCH_CONTINUE,
+                JobType.SESSION_SYNTHESIS,
+            ],
         )
         if leased is None:
             return None
@@ -37,8 +42,10 @@ class ResearchWorker:
                 while not task.done():
                     done, _ = await asyncio.wait({task}, timeout=self.heartbeat_seconds)
                     self.repository.heartbeat_research(leased)
-                await task
-                return self.repository.finish_research(leased)
+                then_synthesize = await task
+                return self.repository.finish_research(
+                    leased, then_synthesize=bool(then_synthesize)
+                )
         except LeaseLost:
             logger.info("Job %s was paused, cancelled, or re-leased", leased.id)
             return self.repository.get_job(leased.id)

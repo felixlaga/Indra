@@ -65,8 +65,11 @@ export interface HypothesisProposal {
   confidence: number;
   testability: number;
   risk: "low" | "medium" | "high" | "unknown";
-  source_open_problem_id: string;
+  /** "model": cross-paper session synthesis; "heuristic": open-problem rule. */
+  source?: "heuristic" | "model";
+  source_open_problem_id?: string | null;
   supporting_claim_ids: string[];
+  contradicting_claim_ids?: string[];
   supporting_paper_ids: string[];
   missing_evidence: string[];
   next_steps: string[];

@@ -4,7 +4,7 @@ import { buildBranchTree } from "@/lib/tree.js";
 import { timelineGroups, uniquePapers } from "@/lib/session-hub.js";
 import { StatusBadge } from "@/components/status-badge";
 import { authorNames } from "@/lib/format";
-import type { Branch, Paper, SessionSnapshot } from "@/lib/types";
+import type { AgentDecision, Branch, Paper, SessionSnapshot } from "@/lib/types";
 import type { ResearchAdvice } from "@/lib/advice-types";
 
 type Select = (type: string, id: string) => void;
@@ -81,6 +81,88 @@ export function TimelineView({
 }
 
 type Node = Branch & { children: Node[] };
+function ScoutDecision({ decision }: { decision: AgentDecision }) {
+  return (
+    <div className="hub-scout-decision">
+      <p>
+        <strong>Scout:</strong> {decision.decision}{" "}
+        {decision.rationale && <span>{decision.rationale}</span>}
+      </p>
+      {!!decision.alternatives.length && (
+        <details>
+          <summary>Not opened ({decision.alternatives.length})</summary>
+          <ul>
+            {decision.alternatives.map((item, index) => (
+              <li key={index}>
+                {item.query} — {item.reason}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+function SessionSynthesis({
+  snapshot,
+  select,
+}: {
+  snapshot: SessionSnapshot;
+  select: Select;
+}) {
+  const overview = snapshot.summaries.find(
+    (summary) => summary.summary_type === "session",
+  );
+  const decision = snapshot.decisions?.find(
+    (item) => item.decision_type === "hypothesis_generation",
+  );
+  const job = snapshot.jobs.find((item) => item.job_type === "session_synthesis");
+  const hypotheses = snapshot.hypotheses ?? [];
+  if (!overview && !decision && !job) return null;
+  return (
+    <section className="hub-synthesis" aria-label="Session synthesis">
+      <h3>Session synthesis</h3>
+      {overview ? (
+        <>
+          <p className="hub-synthesis-text">{overview.text}</p>
+          <small>
+            Written by the model from the checked claims. The overview itself is
+            not validated; rely on each claim&apos;s status.
+          </small>
+        </>
+      ) : (
+        <p>
+          {decision?.rationale ||
+            "Runs once every branch has finished reading and checking."}
+        </p>
+      )}
+      {!!hypotheses.length && (
+        <>
+          <h4>Cross-paper hypotheses · speculative</h4>
+          <ul>
+            {hypotheses.map((item) => (
+              <li key={item.id}>
+                <button
+                  className="hub-text-button"
+                  onClick={() => select("hypothesis", item.id)}
+                >
+                  {item.text}
+                </button>
+                <small>
+                  {item.supporting_paper_ids.length} papers ·{" "}
+                  {item.supporting_claim_ids.length} supporting claims
+                  {item.contradicting_claim_ids.length
+                    ? ` · ${item.contradicting_claim_ids.length} contradicting`
+                    : ""}
+                </small>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
 function ScoutNode({
   node,
   snapshot,
@@ -95,6 +177,9 @@ function ScoutNode({
   const papers = uniquePapers(
     snapshot.papers.filter((entry) => entry.branch_id === node.id),
   );
+  const decision = snapshot.decisions?.find(
+    (item) => item.decision_type === "branch_split" && item.branch_id === node.id,
+  );
   return (
     <li>
       <article className="hub-scout-node">
@@ -107,6 +192,7 @@ function ScoutNode({
         </button>
         <StatusBadge status={node.status} />
         <p>{node.rationale || "No rationale recorded."}</p>
+        {decision && <ScoutDecision decision={decision} />}
         <small>
           {papers.length} papers ·{" "}
           {
@@ -150,9 +236,11 @@ export function ScoutView({
   const tree = buildBranchTree(snapshot.branches) as Node[];
   return (
     <div className="hub-view-content">
+      <SessionSynthesis snapshot={snapshot} select={select} />
       <p className="hub-note">
-        Recorded branch structure and discoveries. Select a branch to inspect
-        its rationale and controls.
+        Recorded branch structure and discoveries. Scouts open follow-up
+        branches when a branch&apos;s checked claims leave a question open.
+        Select a branch to inspect its rationale and controls.
       </p>
       <ul className="hub-scout-tree">
         {tree.map((node) => (

@@ -75,7 +75,15 @@ def start(repo, query="The method improves accuracy."):
         SessionCreate(
             initial_query=query,
             source_providers=["arxiv"],
-            parameters={"research": {"max_papers": 2, "max_claims": 1}},
+            # Single-branch contracts; Scouts and synthesis have their own tests.
+            parameters={
+                "research": {
+                    "max_papers": 2,
+                    "max_claims": 1,
+                    "max_depth": 0,
+                    "synthesize": False,
+                }
+            },
         )
     )
     repo.set_session_status(session.id, SessionStatus.RUNNING, "session_started")
@@ -423,7 +431,13 @@ async def test_model_budget_also_limits_verification(repo):
             initial_query="Bound model spending",
             source_providers=["arxiv"],
             parameters={
-                "research": {"max_papers": 1, "max_claims": 1, "max_model_calls": 1}
+                "research": {
+                    "max_papers": 1,
+                    "max_claims": 1,
+                    "max_model_calls": 1,
+                    "max_depth": 0,
+                    "synthesize": False,
+                }
             },
         )
     )

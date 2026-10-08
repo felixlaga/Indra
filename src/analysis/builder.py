@@ -49,7 +49,9 @@ class ResearchAdviceBuilder:
         gaps = self._gaps(snapshot, research_map, weak_evidence)
         open_problems = self._open_problems(claims, gaps)
         recommendations = self._recommendations(contradictions, weak_evidence, gaps)
-        hypotheses = self._hypotheses(open_problems)
+        hypotheses = self._model_hypotheses(snapshot, claims) + self._hypotheses(
+            open_problems
+        )
         return ResearchAdvice(
             session_id=str(snapshot.session.id),
             contradictions=contradictions,
@@ -376,6 +378,38 @@ class ResearchAdviceBuilder:
             )
         priority_order = {"high": 0, "medium": 1, "low": 2}
         return sorted(recommendations, key=lambda item: (priority_order[item.priority], item.id))[:18]
+
+    def _model_hypotheses(self, snapshot: Any, claims: list[Any]) -> list[HypothesisProposal]:
+        """Session-synthesis hypotheses, scored only by the status of their cited claims."""
+
+        status = {str(claim.id): self._value(claim.status) for claim in claims}
+        proposals = []
+        for item in getattr(snapshot, "hypotheses", []) or []:
+            support = [status.get(str(c)) for c in item.supporting_claim_ids]
+            checked = sum(s in {"supported", "weakly_supported"} for s in support)
+            # An evidence signal capped below certainty, never the model's self-rating.
+            signal = 0.15 + 0.3 * (checked / len(support) if support else 0)
+            if item.contradicting_claim_ids:
+                signal -= 0.1
+            proposals.append(
+                HypothesisProposal(
+                    id=str(item.id),
+                    text=item.text,
+                    rationale=item.rationale or "Proposed by session synthesis.",
+                    confidence=round(min(0.45, max(0.05, signal)), 3),
+                    testability=item.testability if item.testability is not None else 0.5,
+                    risk=item.risk_level
+                    if item.risk_level in {"low", "medium", "high"}
+                    else "unknown",
+                    source="model",
+                    supporting_claim_ids=[str(c) for c in item.supporting_claim_ids],
+                    contradicting_claim_ids=[str(c) for c in item.contradicting_claim_ids],
+                    supporting_paper_ids=[str(p) for p in item.supporting_paper_ids],
+                    missing_evidence=list(item.missing_evidence),
+                    next_steps=list(item.next_steps),
+                )
+            )
+        return proposals
 
     def _hypotheses(self, problems: list[OpenProblem]) -> list[HypothesisProposal]:
         proposals: list[HypothesisProposal] = []

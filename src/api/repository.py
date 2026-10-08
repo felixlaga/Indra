@@ -17,6 +17,7 @@ from ..domain.transitions import (
     validate_session_transition,
 )
 from .models import (
+    AgentDecision,
     Branch,
     BranchCreate,
     BranchPatch,
@@ -29,6 +30,7 @@ from .models import (
     ClaimValidationRequest,
     ClaimValidationResult,
     Event,
+    Hypothesis,
     Job,
     JobStatus,
     JobType,
@@ -85,7 +87,15 @@ class ProductRepository(Protocol):
 
     def validate_research_claim(self, leased: Job, claim_id: str, payload: ClaimValidationRequest) -> ClaimValidationResult: ...
 
-    def finish_research(self, leased: Job) -> Job: ...
+    def reserve_model_call(
+        self, leased: Job, *, limit: int, reserved: int = 0, job_limit: int | None = None
+    ) -> str | None: ...
+
+    def record_research_decision(self, leased: Job, decision, *, max_branches: int) -> list[Branch]: ...
+
+    def save_session_synthesis(self, leased: Job, record) -> None: ...
+
+    def finish_research(self, leased: Job, *, then_synthesize: bool = False) -> Job: ...
 
     def fail_research(self, leased: Job, error: str, retryable: bool = True) -> Job: ...
 
@@ -222,6 +232,8 @@ class InMemoryRepository(MemoryResearchWrites, MemoryEventReads, MemoryViewWrite
         self._jobs: dict[str, Job] = {}
         self._events: dict[str, Event] = {}
         self._research_views: dict[str, dict] = {}
+        self._hypotheses: dict[str, Hypothesis] = {}
+        self._decisions: dict[str, AgentDecision] = {}
         self._event_subscribers: dict[str, list[Queue[Event]]] = {}
         self._runtime_loop_bindings: dict[str, RuntimeLoopBinding] = {}
         self._runtime_loop_states: dict[str, LoopState] = {}
@@ -354,6 +366,14 @@ class InMemoryRepository(MemoryResearchWrites, MemoryEventReads, MemoryViewWrite
                 claims=self._list_claims_unlocked(session_id),
                 claim_evidence=self._list_claim_evidence_for_session_unlocked(
                     session_id
+                ),
+                hypotheses=sorted(
+                    (h for h in self._hypotheses.values() if h.session_id == session_id),
+                    key=lambda h: (h.created_at, h.id),
+                ),
+                decisions=sorted(
+                    (d for d in self._decisions.values() if d.session_id == session_id),
+                    key=lambda d: (d.created_at, d.id),
                 ),
                 events=recent,
                 event_cursor=events[-1].sequence if events else 0,
@@ -1135,21 +1155,40 @@ class InMemoryRepository(MemoryResearchWrites, MemoryEventReads, MemoryViewWrite
 
     def _mark_job_target_failed_unlocked(self, job: Job, error: str) -> None:
         now = utc_now()
+        session = self._sessions.get(job.session_id)
         if job.job_type == JobType.RESEARCH_SESSION:
-            session = self._sessions.get(job.session_id)
             if session is not None:
                 session.status = SessionStatus.FAILED
                 session.failure_reason = error
                 session.completed_at = now
                 session.updated_at = now
                 self._sessions[session.id] = session
-        if job.branch_id:
+        if job.branch_id and job.job_type != JobType.SESSION_SYNTHESIS:
             branch = self._branches.get(job.branch_id)
             if branch is not None:
                 branch.status = BranchStatus.FAILED
                 branch.failure_reason = error
                 branch.updated_at = now
                 self._branches[branch.id] = branch
+        # A failed Scout branch or synthesis keeps the session's other results usable.
+        if (
+            job.job_type != JobType.RESEARCH_SESSION
+            and session is not None
+            and session.status == SessionStatus.RUNNING
+            and not any(
+                other.status in {JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.PAUSED}
+                for other in self._list_jobs_unlocked(job.session_id)
+                if other.id != job.id
+            )
+        ):
+            session.status = SessionStatus.COMPLETED
+            session.completed_at = session.updated_at = now
+            self._create_event_unlocked(
+                session_id=session.id,
+                event_type="session_completed",
+                payload={"message": "Session finished; a follow-up job failed and its results are partial."},
+                severity="warning",
+            )
 
     def _list_papers_unlocked(self, session_id: str) -> list[SessionPaperView]:
         views: list[SessionPaperView] = []

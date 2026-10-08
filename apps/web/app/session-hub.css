@@ -523,93 +523,6 @@
 .session-hub .data-table {
   font-size: 12px;
 }
-.hub-graph-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  padding: 16px;
-}
-.hub-graph-controls label {
-  margin-left: auto;
-}
-.hub-graph-controls input {
-  accent-color: var(--accent);
-}
-.hub-graph-canvas {
-  width: 100%;
-  min-height: 300px;
-  max-height: 520px;
-  background: radial-gradient(var(--line) 1px, transparent 1px);
-  background-size: 22px 22px;
-  touch-action: none;
-  cursor: grab;
-}
-.hub-graph-canvas:active {
-  cursor: grabbing;
-}
-.hub-graph-node {
-  cursor: pointer;
-}
-.hub-graph-node circle {
-  fill: var(--panel-3);
-  stroke: var(--accent);
-  stroke-width: 2;
-}
-.hub-graph-node.is-selected circle,
-.hub-graph-node:focus circle {
-  stroke: var(--success);
-  stroke-width: 4;
-}
-.hub-graph-node text {
-  font-size: 12px;
-  fill: var(--text);
-}
-.hub-graph-node .hub-node-year {
-  fill: var(--muted);
-}
-.hub-graph-node .hub-node-number {
-  font-size: 12px;
-}
-.hub-edge-cites {
-  stroke: var(--accent);
-  stroke-width: 1.5;
-}
-.hub-edge-related {
-  stroke: var(--muted);
-  stroke-dasharray: 4 5;
-}
-.hub-edge-supports,
-.hub-edge-weakly_supports {
-  fill: none;
-  stroke: var(--success);
-  stroke-width: 2;
-}
-.hub-edge-weakly_supports {
-  stroke-dasharray: 5 4;
-}
-.hub-edge-contradicts {
-  fill: none;
-  stroke: var(--danger);
-  stroke-width: 2;
-}
-.hub-graph-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  font-size: 12px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--line);
-}
-.hub-graph-legend .support {
-  color: var(--success);
-}
-.hub-graph-legend .contradiction {
-  color: var(--danger);
-}
-.hub-graph-legend .citation {
-  color: var(--accent);
-}
 .hub-list-details {
   margin: 12px 16px;
 }
@@ -721,18 +634,12 @@
     grid-template-columns: 1fr;
     gap: 6px;
   }
-  .hub-graph-controls label {
-    margin-left: 0;
-  }
   .hub-scout-tree ul {
     margin-left: 6px;
     padding-left: 10px;
   }
   .hub-scout-papers {
     margin-left: 8px;
-  }
-  .hub-graph-canvas {
-    min-height: 240px;
   }
   .hub-run-controls {
     flex-shrink: 1;
@@ -818,4 +725,228 @@
 .status-weakly-supported .status-dot {
   border-radius: 0;
   transform: rotate(45deg);
+}
+
+/* Research graph (ERLA-style): branches, papers read and found, hypotheses, gaps. */
+.rg {
+  display: grid;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+.rg-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding-top: 16px;
+}
+.rg-controls input {
+  accent-color: var(--accent);
+}
+.rg-mode {
+  display: inline-flex;
+  gap: 4px;
+}
+.rg-summary {
+  margin: 0;
+}
+.rg-stage {
+  position: relative;
+  min-height: 640px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #0a0d12;
+}
+.rg-loading {
+  padding: 16px;
+}
+.rg-detail {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: min(340px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(16, 21, 29, 0.94);
+  box-shadow: var(--shadow);
+}
+.rg-detail header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rg-detail header button {
+  margin-left: auto;
+  font-size: 18px;
+  line-height: 1;
+}
+.rg-detail p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.rg-detail .rg-detail-title {
+  color: var(--text);
+  font-size: 14px;
+}
+.rg-detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.rg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+.rg-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rg-dot {
+  display: inline-block;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+.rg-dot.rg-ring {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55);
+}
+.rg-tooltip {
+  display: grid;
+  gap: 4px;
+  max-width: 320px;
+  padding: 8px 10px;
+  border: 1px solid #273140;
+  border-radius: 8px;
+  background: rgba(10, 13, 18, 0.94);
+  color: #f2f5f8;
+  font: 12px/1.4 Inter, system-ui, sans-serif;
+}
+@media (max-width: 640px) {
+  .rg {
+    padding: 0 8px 12px;
+  }
+  .rg-stage {
+    min-height: 480px;
+  }
+}
+.rg-controls select,
+.rg-expand select {
+  margin-left: 4px;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+}
+.rg-expand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.rg-expand-status {
+  flex: 1 1 260px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.rg-insight {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.rg-insight h3,
+.rg-insight h4 {
+  margin: 0;
+}
+.rg-insight h4 {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.rg-insight-summary {
+  margin: 0;
+  color: var(--text);
+}
+.rg-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.rg-themes,
+.rg-paper-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rg-paper-list {
+  padding-left: 18px;
+  list-style: decimal;
+  color: var(--muted-2);
+}
+.rg-themes li,
+.rg-paper-list li {
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+}
+.rg-themes li > span,
+.rg-paper-list li > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.rg-themes button,
+.rg-paper-list button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  text-align: left;
+}
+.rg-years {
+  margin: 0;
+}
+.rg-years svg {
+  display: block;
+  width: 100%;
+  height: 56px;
+}
+.rg-years rect {
+  fill: var(--accent);
+  opacity: 0.75;
+}
+.rg-years figcaption {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+}
+@media (max-width: 900px) {
+  .rg-insight-grid {
+    grid-template-columns: 1fr;
+  }
 }

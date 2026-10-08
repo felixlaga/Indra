@@ -54,6 +54,7 @@ from .view_repository import MemoryViewWrites
 
 if TYPE_CHECKING:
     from ..orchestration.models import LoopState
+    from ..research.models import FoundPaper
 
 
 class RepositoryError(Exception):
@@ -173,6 +174,12 @@ class ProductRepository(Protocol):
 
     def list_papers(self, session_id: str) -> list[SessionPaperView]: ...
 
+    def list_discovered_papers(self, session_id: str) -> list[SessionPaperView]: ...
+
+    def save_discovered_papers(self, leased: Job, found: list[FoundPaper]) -> int: ...
+
+    def request_network_expansion(self, session_id: str, papers: int) -> Job: ...
+
     def get_paper(self, paper_id: str) -> Paper: ...
 
     def extract_claims(
@@ -214,6 +221,21 @@ def utc_now() -> datetime:
     """Return a timezone-aware UTC timestamp."""
 
     return datetime.now(timezone.utc)
+
+
+EXPANSION_TIMEOUT_SECONDS = 900
+
+
+def unread_once(views: list[SessionPaperView], read: set[str]) -> list[SessionPaperView]:
+    """Discovered papers not read anywhere in the session, first discovery kept."""
+
+    seen = set(read)
+    unique = []
+    for view in views:
+        if view.paper_id not in seen:
+            seen.add(view.paper_id)
+            unique.append(view)
+    return unique
 
 
 class InMemoryRepository(
@@ -737,6 +759,41 @@ class InMemoryRepository(
             self._get_session_unlocked(session_id)
             return self._list_papers_unlocked(session_id)
 
+    def request_network_expansion(self, session_id: str, papers: int) -> Job:
+        """Queue one job that grows the session's paper network; a repeat returns it."""
+
+        with self._lock:
+            session = self._get_session_unlocked(session_id)
+            if session.status not in (SessionStatus.RUNNING, SessionStatus.COMPLETED):
+                raise ConflictError("Start the session before expanding its paper network")
+            if not self._list_papers_unlocked(session_id):
+                raise ConflictError("The session has no papers to expand from yet")
+            for job in self._jobs.values():
+                if (
+                    job.session_id == session_id
+                    and job.job_type == JobType.NETWORK_EXPANSION
+                    and job.status in {JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.PAUSED}
+                ):
+                    return job.model_copy(deep=True)
+            job = self._enqueue_job_unlocked(
+                session_id=session_id,
+                branch_id=None,
+                job_type=JobType.NETWORK_EXPANSION,
+                payload={"papers": papers},
+                timeout_seconds=EXPANSION_TIMEOUT_SECONDS,
+            )
+            return job.model_copy(deep=True)
+
+    def list_discovered_papers(self, session_id: str) -> list[SessionPaperView]:
+        """Papers a branch found but did not read, once each, for the research map."""
+
+        with self._lock:
+            self._get_session_unlocked(session_id)
+            read = {view.paper_id for view in self._list_papers_unlocked(session_id)}
+            return unread_once(
+                self._list_papers_unlocked(session_id, selected=False), read
+            )
+
     def get_paper(self, paper_id: str) -> Paper:
         """Get a paper by internal API ID or provider paper ID."""
 
@@ -1194,11 +1251,12 @@ class InMemoryRepository(
                 self._branches[branch.id] = branch
         # A failed Scout branch or synthesis keeps the session's other results usable.
         if (
-            job.job_type != JobType.RESEARCH_SESSION
+            job.job_type not in (JobType.RESEARCH_SESSION, JobType.NETWORK_EXPANSION)
             and session is not None
             and session.status == SessionStatus.RUNNING
             and not any(
                 other.status in {JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.PAUSED}
+                and other.job_type != JobType.NETWORK_EXPANSION
                 for other in self._list_jobs_unlocked(job.session_id)
                 if other.id != job.id
             )
@@ -1212,10 +1270,15 @@ class InMemoryRepository(
                 severity="warning",
             )
 
-    def _list_papers_unlocked(self, session_id: str) -> list[SessionPaperView]:
+    def _list_papers_unlocked(
+        self, session_id: str, *, selected: bool = True
+    ) -> list[SessionPaperView]:
         views: list[SessionPaperView] = []
         for session_paper in self._session_papers.values():
-            if session_paper.session_id != session_id:
+            if (
+                session_paper.session_id != session_id
+                or session_paper.selected != selected
+            ):
                 continue
             paper = self._papers.get(session_paper.paper_id)
             if paper is None:

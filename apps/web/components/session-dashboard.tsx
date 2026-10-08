@@ -6,7 +6,7 @@ import { ErrorPanel } from "@/components/error-panel";
 import { StatusBadge } from "@/components/status-badge";
 import { HubTabs } from "@/components/session-hub/tabs";
 import { ClaimLedger } from "@/components/session-hub/ledger";
-import { CitationGraph } from "@/components/session-hub/graph";
+import { ResearchGraph } from "@/components/research-graph/research-graph";
 import {
   ClaimMapView,
   PapersView,
@@ -23,7 +23,7 @@ import type { ResearchAdvice } from "@/lib/advice-types";
 
 const views = [
   { id: "scout", label: "Scout Tree" },
-  { id: "graph", label: "Citation Graph" },
+  { id: "graph", label: "Research Graph" },
   { id: "timeline", label: "Timeline" },
   { id: "claims", label: "Claim Map" },
   { id: "papers", label: "Papers" },
@@ -161,8 +161,8 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
     setDerivedBusy(true);
     const requests: Promise<unknown>[] = [];
     if (view === "graph") {
+      // The previous map stays on screen until the refreshed one arrives.
       setMapError(null);
-      setMap(null);
       requests.push(
         indraApi
           .getResearchMap(sessionId, controller.signal)
@@ -179,9 +179,9 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
           }),
       );
     }
-    if (view === "claims" || type === "hypothesis") {
+    // The graph draws the advisor's hypotheses, gaps and contradictions too.
+    if (view === "claims" || view === "graph" || type === "hypothesis") {
       setAdviceError(null);
-      setAdvice(null);
       requests.push(
         indraApi
           .getResearchAdvice(sessionId, controller.signal)
@@ -498,7 +498,7 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
                     <>
                       {derivedBusy && (
                         <p role="status" className="hub-note">
-                          Updating citation graph…
+                          Updating research graph…
                         </p>
                       )}
                       {mapError && (
@@ -507,12 +507,28 @@ export function SessionDashboard({ sessionId }: { sessionId: string }) {
                           onRetry={() => void retryDerived()}
                         />
                       )}{" "}
+                      {adviceError && (
+                        <p className="hub-note">
+                          Hypotheses and gaps are unavailable: {adviceError}
+                        </p>
+                      )}
                       {map && (
-                        <CitationGraph
+                        <ResearchGraph
                           map={map}
                           snapshot={snapshot}
-                          select={select}
-                          selectedId={type === "paper" ? selectedId : null}
+                          advice={advice}
+                          onInspect={select}
+                          expansion={{
+                            job:
+                              snapshot.jobs
+                                .filter((job) => job.job_type === "network_expansion")
+                                .sort((a, b) => a.created_at.localeCompare(b.created_at))
+                                .at(-1) ?? null,
+                            onExpand: async (papers) => {
+                              await indraApi.expandNetwork(sessionId, papers);
+                              await load();
+                            },
+                          }}
                         />
                       )}
                     </>

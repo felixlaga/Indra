@@ -228,3 +228,21 @@ async def test_a_selection_without_valid_candidates_uses_the_ranking(repo):
     (decision,) = [d for d in snapshot.decisions if d.decision_type == "paper_selection"]
     assert decision.details["method"] == "ranking"
     assert {p.paper.title for p in snapshot.papers} == {t for t, _ in ON_TOPIC}
+
+
+async def test_unread_on_topic_candidates_are_kept_for_the_map_only(repo):
+    session = start(repo)
+    await ResearchWorker(
+        repo, ResearchPipeline(repo, Model(), search=Search(), full_text=no_text)
+    ).run_once()
+    store = reader(repo)
+    read = store.list_papers(session.id)
+    assert {p.paper.title for p in read} == {ON_TOPIC[0][0], ON_TOPIC[1][0]}
+    assert all(p.selected and p.selection_reason.startswith("Reason") for p in read)
+    # Off-topic noise is not kept; the unread on-topic paper is, once.
+    (found,) = store.list_discovered_papers(session.id)
+    assert found.paper.title == ON_TOPIC[2][0] and not found.selected
+    assert "model chose other papers" in found.selection_reason
+    assert {p.paper.title for p in store.get_session_snapshot(session.id).papers} == {
+        p.paper.title for p in read
+    }

@@ -102,30 +102,6 @@ export function timelineGroups(papers) {
   }));
 }
 
-/** Stable cells prevent label overlap, including same-year papers. @param {import('./types').ResearchMapNode[]} nodes */
-export function graphPositions(nodes) {
-  const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
-  const sorted = [...nodes].sort(
-    (a, b) =>
-      (a.year ?? 9999) - (b.year ?? 9999) ||
-      a.paper_id.localeCompare(b.paper_id),
-  );
-  const width = Math.max(660, columns * 220);
-  const rows = Math.ceil(nodes.length / columns);
-  const height = Math.max(360, rows * 125);
-  return {
-    width,
-    height,
-    nodes: sorted.map((node, index) => ({
-      ...node,
-      x: (width - columns * 220) / 2 + 110 + (index % columns) * 220,
-      y: (height - rows * 125) / 2 + 52 + Math.floor(index / columns) * 125,
-      radius:
-        8 + Math.min(14, Math.log1p(Math.max(0, node.citation_count)) * 2),
-    })),
-  };
-}
-
 /** @param {SessionSnapshot} snapshot */
 export function evidenceEdges(snapshot) {
   const claims = new Map(snapshot.claims.map((claim) => [claim.id, claim]));

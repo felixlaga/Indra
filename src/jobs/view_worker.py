@@ -28,7 +28,10 @@ class ViewWorker:
             snapshot = self.repository.get_session_snapshot(
                 str(leased["session_id"]), event_limit=0
             )
-            research_map = ResearchMapBuilder().build(snapshot)
+            research_map = ResearchMapBuilder().build(
+                snapshot,
+                self.repository.list_discovered_papers(str(leased["session_id"])),
+            )
             advice = ResearchAdviceBuilder().build(snapshot, research_map)
             self.repository.finish_views(
                 leased,

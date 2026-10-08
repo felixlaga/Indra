@@ -5,7 +5,6 @@ import {
   filterLedger,
   timelineGroups,
   uniquePapers,
-  graphPositions,
   evidenceEdges,
 } from "../lib/session-hub.js";
 const snapshot = {
@@ -119,20 +118,6 @@ test("timeline deduplicates shared papers and preserves undated entries", () => 
     timelineGroups(papers).map((group) => group.year),
     [2020, null],
   );
-});
-test("graph cells stay stable and separate when publication years coincide", () => {
-  const nodes = Array.from({ length: 40 }, (_, i) => ({
-    paper_id: `p${i}`,
-    year: 2020,
-    citation_count: i * 10,
-  }));
-  const layout = graphPositions(nodes);
-  assert.equal(new Set(layout.nodes.map((n) => `${n.x}:${n.y}`)).size, 40);
-  assert.deepEqual(graphPositions([...nodes].reverse()), layout);
-  assert.ok(
-    layout.nodes.every((n) => n.x < layout.width && n.y < layout.height),
-  );
-  assert.ok(layout.nodes.at(-1).radius <= 22);
 });
 test("evidence edges deduplicate claims and exclude mentions and self links", () => {
   const edges = evidenceEdges(snapshot);

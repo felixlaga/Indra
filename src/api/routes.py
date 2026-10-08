@@ -23,6 +23,7 @@ from .models import (
     ClaimValidationResult,
     Event,
     Job,
+    NetworkExpansionRequest,
     JobCompletionRequest,
     JobFailureRequest,
     JobLeaseRequest,
@@ -271,6 +272,22 @@ def start_session(session_id: str, request: Request) -> ResearchSession:
             session_id,
             SessionStatus.RUNNING,
             "session_started",
+        )
+    except RepositoryError as exc:
+        handle_repository_error(exc)
+        raise
+
+
+# 200 with the queued job: dashboard clients reserve 202 for derived views still building.
+@router.post("/sessions/{session_id}/expand", response_model=Job)
+def expand_network(
+    session_id: str, payload: NetworkExpansionRequest, request: Request
+) -> Job:
+    """Queue a job that grows the session's paper network along citations."""
+
+    try:
+        return get_repository(request).request_network_expansion(
+            session_id, payload.papers
         )
     except RepositoryError as exc:
         handle_repository_error(exc)

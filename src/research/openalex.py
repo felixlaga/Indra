@@ -145,6 +145,30 @@ class OpenAlexClient:
             params["filter"] = filter_value
         return [to_product_paper(w) for w in await self._works(params) if w.get("title")]
 
+    async def works(self, ids: list[str]) -> list[Paper]:
+        """Works by OpenAlex ID ("W123"), in batches of the OR-filter limit."""
+
+        found: list[Paper] = []
+        for start in range(0, len(ids), MAX_LOOKUP):
+            batch = ids[start : start + MAX_LOOKUP]
+            works = await self._works(
+                {"filter": "ids.openalex:" + "|".join(batch), "per-page": str(len(batch))}
+            )
+            found.extend(to_product_paper(w) for w in works if w.get("title"))
+        return found
+
+    async def citing(self, ids: list[str], *, limit: int, sort: str) -> list[Paper]:
+        """Works that cite any of ``ids``, e.g. sorted by "cited_by_count:desc"."""
+
+        if not ids:
+            return []
+        params = {
+            "filter": "cites:" + "|".join(ids[:MAX_LOOKUP]),
+            "per-page": str(max(1, min(limit, 200))),
+            "sort": sort,
+        }
+        return [to_product_paper(w) for w in await self._works(params) if w.get("title")]
+
     async def lookup(self, papers: list[Paper]) -> dict[str, Paper]:
         """OpenAlex records for papers, keyed by the paper's canonical key.
 

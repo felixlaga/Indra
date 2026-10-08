@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-from ..research.models import PaperChunk, PaperResult, stable_id
+from ..research.models import READ_REASON, FoundPaper, PaperChunk, PaperResult, stable_id
 from .models import (
     AgentDecision,
     Branch,
@@ -69,6 +69,7 @@ class MemoryResearchWrites:
                 for session_id in sorted({link.session_id for link in self._session_papers.values() if link.paper_id == paper.id}):
                     self._create_event_unlocked(session_id, "paper_metadata_updated", {}, paper_id=paper.id)
             link_id = stable_id(leased.session_id, leased.branch_id or "", paper.id)
+            prior = self._session_papers.get(link_id)
             self._session_papers[link_id] = SessionPaper(
                 id=link_id,
                 session_id=leased.session_id,
@@ -76,7 +77,9 @@ class MemoryResearchWrites:
                 paper_id=paper.id,
                 selected=True,
                 discovery_method="query_search",
-                selection_reason="Selected from provider relevance ranking within the session paper limit.",
+                selection_reason=result.selection_reason
+                or (prior.selection_reason if prior else None)
+                or READ_REASON,
                 created_at=utc_now(),
             )
             for chunk in result.chunks:
@@ -169,6 +172,49 @@ class MemoryResearchWrites:
                 return "branch"
             current.result["model_calls"] = mine + 1
             return None
+
+    def save_discovered_papers(self, leased: Job, found: list[FoundPaper]) -> int:
+        """Link papers the session found but did not read, for the research map."""
+
+        from .repository import utc_now
+
+        if not found:
+            return 0
+        with self._lock:
+            self._research_lease(leased)
+            for item in found:
+                paper = next(
+                    (
+                        p
+                        for p in self._papers.values()
+                        if p.canonical_key == item.paper.canonical_key
+                    ),
+                    None,
+                )
+                if paper is None:
+                    paper = item.paper.model_copy(deep=True)
+                    self._papers[paper.id] = paper
+                link_id = stable_id(leased.session_id, leased.branch_id or "", paper.id)
+                self._session_papers.setdefault(
+                    link_id,
+                    SessionPaper(
+                        id=link_id,
+                        session_id=leased.session_id,
+                        branch_id=leased.branch_id,
+                        paper_id=paper.id,
+                        selected=False,
+                        discovery_method=item.method,
+                        selection_reason=item.reason,
+                        created_at=utc_now(),
+                    ),
+                )
+            self._create_event_unlocked(
+                session_id=leased.session_id,
+                branch_id=leased.branch_id,
+                event_type="papers_found",
+                payload={"count": len(found)},
+            )
+        return len(found)
 
     def record_research_decision(self, leased: Job, decision, *, max_branches: int) -> list[Branch]:
         """Store a decision and open its Scout branches with their jobs, once."""
@@ -319,6 +365,16 @@ class MemoryResearchWrites:
         with self._lock:
             current = self._research_lease(leased)
             now = utc_now()
+            if current.job_type == JobType.NETWORK_EXPANSION:
+                current.status = JobStatus.SUCCEEDED
+                current.locked_at = current.locked_by = None
+                current.completed_at = current.updated_at = now
+                self._create_event_unlocked(
+                    session_id=current.session_id,
+                    event_type="job_completed",
+                    payload={"job_id": current.id, "job_type": current.job_type.value},
+                )
+                return current.model_copy(deep=True)
             if current.branch_id:
                 branch = self._get_branch_unlocked(current.branch_id)
                 if branch.status == BranchStatus.RUNNING:
@@ -332,7 +388,10 @@ class MemoryResearchWrites:
                 payload={"job_id": current.id, "job_type": current.job_type.value},
             )
             jobs = self._list_jobs_unlocked(current.session_id)
-            if not any(j.status in ACTIVE_JOB_STATUSES for j in jobs):
+            if not any(
+                j.status in ACTIVE_JOB_STATUSES and j.job_type != JobType.NETWORK_EXPANSION
+                for j in jobs
+            ):
                 if then_synthesize and not any(
                     j.job_type == JobType.SESSION_SYNTHESIS for j in jobs
                 ):

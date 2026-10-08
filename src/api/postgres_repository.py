@@ -44,7 +44,14 @@ from .models import (
     Summary,
 )
 from .accounts_repository import PostgresAccounts
-from .repository import ConflictError, EventSubscription, NotFoundError, utc_now
+from .repository import (
+    EXPANSION_TIMEOUT_SECONDS,
+    ConflictError,
+    EventSubscription,
+    NotFoundError,
+    unread_once,
+    utc_now,
+)
 from .research_loop import ResearchLoopBridge
 from .research_postgres import PostgresResearchWrites
 from .event_repository import PostgresEventReads
@@ -728,6 +735,54 @@ class PostgresRepository(
         self._publish_inserted_events(pending_events)
         return branch
 
+    def request_network_expansion(self, session_id: str, papers: int) -> Job:
+        """Queue one job that grows the session's paper network; a repeat returns it."""
+
+        pending: list[InsertedEvent] = []
+        with self._connect() as conn:
+            self._get_session(conn, session_id)
+            # Lock the session like pause/cancel do, so two requests cannot both insert.
+            status = self._fetch_one(
+                conn,
+                "SELECT status FROM research_sessions WHERE id=%s FOR NO KEY UPDATE",
+                (session_id,),
+            )["status"]
+            if status not in ("running", "completed"):
+                raise ConflictError("Start the session before expanding its paper network")
+            existing = self._fetch_optional(
+                conn,
+                """SELECT * FROM jobs WHERE session_id=%s AND job_type='network_expansion'
+                AND status IN ('queued','running','paused') LIMIT 1""",
+                (session_id,),
+            )
+            if existing:
+                return _job_from_row(existing)
+            if not self._fetch_optional(
+                conn,
+                "SELECT 1 FROM session_papers WHERE session_id=%s AND selected LIMIT 1",
+                (session_id,),
+            ):
+                raise ConflictError("The session has no papers to expand from yet")
+            job, event = self._insert_job(
+                conn,
+                session_id=session_id,
+                branch_id=None,
+                job_type=JobType.NETWORK_EXPANSION,
+                payload={"papers": papers},
+                timeout_seconds=EXPANSION_TIMEOUT_SECONDS,
+            )
+            pending.append(event)
+        self._publish_inserted_events(pending)
+        return job
+
+    def list_discovered_papers(self, session_id: str) -> list[SessionPaperView]:
+        """Papers a branch found but did not read, once each, for the research map."""
+
+        with self._connect() as conn:
+            self._get_session(conn, session_id)
+            read = {view.paper_id for view in self._list_papers(conn, session_id)}
+            return unread_once(self._list_papers(conn, session_id, selected=False), read)
+
     def list_papers(self, session_id: str) -> list[SessionPaperView]:
         with self._connect() as conn:
             self._get_session(conn, session_id)
@@ -1341,14 +1396,15 @@ class PostgresRepository(
                 (error, job.branch_id),
             )
         # A failed Scout branch or synthesis keeps the session's other results usable.
-        if job.job_type != JobType.RESEARCH_SESSION:
+        if job.job_type not in (JobType.RESEARCH_SESSION, JobType.NETWORK_EXPANSION):
             completed = self._fetch_optional(
                 conn,
                 """
                 UPDATE research_sessions SET status='completed', completed_at=now()
                 WHERE id=%s AND status='running' AND NOT EXISTS (
                     SELECT 1 FROM jobs WHERE session_id=%s AND id<>%s
-                    AND status IN ('queued','running','paused'))
+                    AND status IN ('queued','running','paused')
+                    AND job_type <> 'network_expansion')
                 RETURNING id
                 """,
                 (job.session_id, job.session_id, job.id),
@@ -1398,7 +1454,9 @@ class PostgresRepository(
             raise NotFoundError("Paper not found")
         return str(paper["id"])
 
-    def _list_papers(self, conn: Any, session_id: str) -> list[SessionPaperView]:
+    def _list_papers(
+        self, conn: Any, session_id: str, *, selected: bool = True
+    ) -> list[SessionPaperView]:
         rows = self._fetch_all(
             conn,
             """
@@ -1415,10 +1473,10 @@ class PostgresRepository(
               p.*
             FROM session_papers sp
             JOIN papers p ON p.id = sp.paper_id
-            WHERE sp.session_id = %s
+            WHERE sp.session_id = %s AND sp.selected = %s
             ORDER BY sp.created_at
             """,
-            (session_id,),
+            (session_id, selected),
         )
         return [_session_paper_view_from_row(row) for row in rows]
 

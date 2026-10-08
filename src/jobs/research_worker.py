@@ -33,6 +33,7 @@ class ResearchWorker:
                 JobType.RESEARCH_SESSION,
                 JobType.BRANCH_CONTINUE,
                 JobType.SESSION_SYNTHESIS,
+                JobType.NETWORK_EXPANSION,
             ],
         )
         if leased is None:

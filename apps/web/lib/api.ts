@@ -158,8 +158,6 @@ export const indraApi = {
     }),
 };
 
-export const erlaApi = indraApi;
-
 async function authRequest(action: "login" | "register" | "logout", body?: unknown) {
   const response = await fetch(`/api/auth/${action}`, {
     method: "POST",

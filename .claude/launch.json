@@ -1,0 +1,45 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "indra-api",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "uvicorn",
+        "src.api.app:app",
+        "--env-file",
+        ".env",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "indra-worker",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "python",
+        "-m",
+        "src.jobs.research_worker"
+      ],
+      "port": 8001,
+      "autoPort": true
+    },
+    {
+      "name": "indra-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "apps/web",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "3200"
+      ],
+      "port": 3200
+    }
+  ]
+}
